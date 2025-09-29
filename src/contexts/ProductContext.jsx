@@ -1,6 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useAuth } from './AuthContext';
 
 const ProductContext = createContext();
+
+// API base URL - matches your Flask server
+const API_BASE_URL = 'http://127.0.0.1:5000/api';
 
 export const useProducts = () => {
   const context = useContext(ProductContext);
@@ -10,100 +14,61 @@ export const useProducts = () => {
   return context;
 };
 
-const mockProducts = [
-  {
-    id: '1',
-    name: 'Wireless Bluetooth Headphones',
-    description: 'Premium quality wireless headphones with noise cancellation and 30-hour battery life.',
-    category: 'Electronics',
-    price: 199.99,
-    seller_id: '2',
-    seller_name: 'Jane Seller',
-    image_url: 'https://images.pexels.com/photos/3394650/pexels-photo-3394650.jpeg?auto=compress&cs=tinysrgb&w=500',
-    rating: 4.5,
-    reviews_count: 128,
-    wishlist_count: 45
-  },
-  {
-    id: '2',
-    name: 'Smart Fitness Watch',
-    description: 'Track your fitness goals with this advanced smartwatch featuring heart rate monitoring and GPS.',
-    category: 'Electronics',
-    price: 299.99,
-    seller_id: '2',
-    seller_name: 'Jane Seller',
-    image_url: 'https://images.pexels.com/photos/437037/pexels-photo-437037.jpeg?auto=compress&cs=tinysrgb&w=500',
-    rating: 4.8,
-    reviews_count: 89,
-    wishlist_count: 67
-  },
-  {
-    id: '3',
-    name: 'Professional Camera Lens',
-    description: '85mm f/1.4 lens perfect for portrait photography with beautiful bokeh effects.',
-    category: 'Photography',
-    price: 1299.99,
-    seller_id: '2',
-    seller_name: 'Jane Seller',
-    image_url: 'https://images.pexels.com/photos/90946/pexels-photo-90946.jpeg?auto=compress&cs=tinysrgb&w=500',
-    rating: 4.9,
-    reviews_count: 34,
-    wishlist_count: 23
-  },
-  {
-    id: '4',
-    name: 'Ergonomic Office Chair',
-    description: 'Comfortable office chair with lumbar support and adjustable height for long work sessions.',
-    category: 'Furniture',
-    price: 449.99,
-    seller_id: '2',
-    seller_name: 'Jane Seller',
-    image_url: 'https://images.pexels.com/photos/586750/pexels-photo-586750.jpeg?auto=compress&cs=tinysrgb&w=500',
-    rating: 4.3,
-    reviews_count: 156,
-    wishlist_count: 78
-  },
-  {
-    id: '5',
-    name: 'Organic Coffee Beans',
-    description: 'Premium organic coffee beans from sustainable farms with rich, full-bodied flavor.',
-    category: 'Food & Beverages',
-    price: 24.99,
-    seller_id: '2',
-    seller_name: 'Jane Seller',
-    image_url: 'https://images.pexels.com/photos/894695/pexels-photo-894695.jpeg?auto=compress&cs=tinysrgb&w=500',
-    rating: 4.6,
-    reviews_count: 203,
-    wishlist_count: 92
-  },
-  {
-    id: '6',
-    name: 'Yoga Mat Premium',
-    description: 'Non-slip yoga mat with extra cushioning for comfortable practice sessions.',
-    category: 'Sports & Fitness',
-    price: 79.99,
-    seller_id: '2',
-    seller_name: 'Jane Seller',
-    image_url: 'https://images.pexels.com/photos/3822621/pexels-photo-3822621.jpeg?auto=compress&cs=tinysrgb&w=500',
-    rating: 4.4,
-    reviews_count: 67,
-    wishlist_count: 34
-  }
-];
-
 export const ProductProvider = ({ children }) => {
-  const [products, setProducts] = useState(mockProducts);
+  const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [priceRange, setPriceRange] = useState([0, 2000]);
   const [sortBy, setSortBy] = useState('name');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
+  const { user } = useAuth();
+
+  // Fetch products from backend
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  // Update categories when products change
   useEffect(() => {
     const uniqueCategories = [...new Set(products.map(p => p.category))];
     setCategories(uniqueCategories);
   }, [products]);
 
+  const fetchProducts = async (filters = {}) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const queryParams = new URLSearchParams({
+        search: filters.search || '',
+        category: filters.category || 'all',
+        minPrice: filters.minPrice || 0,
+        maxPrice: filters.maxPrice || 10000,
+        sortBy: filters.sortBy || 'name'
+      }).toString();
+
+      const response = await fetch(`${API_BASE_URL}/products?${queryParams}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch products');
+      }
+
+      const data = await response.json();
+      setProducts(data.products || []);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      setError(error.message);
+      // Set empty array on error to prevent crashes
+      setProducts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Client-side filtering for real-time UI updates
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          product.description.toLowerCase().includes(searchQuery.toLowerCase());
@@ -118,38 +83,122 @@ export const ProductProvider = ({ children }) => {
       case 'price-high':
         return b.price - a.price;
       case 'rating':
-        return b.rating - a.rating;
+        return (b.rating || 0) - (a.rating || 0);
       case 'popularity':
-        return b.wishlist_count - a.wishlist_count;
+        return (b.wishlist_count || 0) - (a.wishlist_count || 0);
       default:
         return a.name.localeCompare(b.name);
     }
   });
 
-  const addProduct = (productData) => {
-    const newProduct = {
-      ...productData,
-      id: Date.now().toString(),
-      rating: 0,
-      reviews_count: 0,
-      wishlist_count: 0
-    };
-    setProducts(prev => [...prev, newProduct]);
-    return newProduct;
+  const addProduct = async (productData) => {
+    if (!user) {
+      return { success: false, error: 'You must be logged in to add products' };
+    }
+
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${API_BASE_URL}/products`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(productData)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to add product');
+      }
+
+      const newProduct = data.product;
+      setProducts(prev => [...prev, newProduct]);
+      return { success: true, product: newProduct };
+    } catch (error) {
+      console.error('Error adding product:', error);
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const updateProduct = (productId, updates) => {
-    setProducts(prev => prev.map(p => 
-      p.id === productId ? { ...p, ...updates } : p
-    ));
+  const updateProduct = async (productId, updates) => {
+    if (!user) {
+      return { success: false, error: 'You must be logged in to update products' };
+    }
+
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${API_BASE_URL}/products/${productId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(updates)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update product');
+      }
+
+      const updatedProduct = data.product;
+      setProducts(prev => prev.map(p => 
+        p._id === productId ? updatedProduct : p
+      ));
+
+      return { success: true, product: updatedProduct };
+    } catch (error) {
+      console.error('Error updating product:', error);
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const deleteProduct = (productId) => {
-    setProducts(prev => prev.filter(p => p.id !== productId));
+  const deleteProduct = async (productId) => {
+    if (!user) {
+      return { success: false, error: 'You must be logged in to delete products' };
+    }
+
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${API_BASE_URL}/products/${productId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to delete product');
+      }
+
+      setProducts(prev => prev.filter(p => p._id !== productId));
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getProductById = (id) => {
-    return products.find(p => p.id === id);
+    return products.find(p => p._id === id);
+  };
+
+  // Refresh products when filters change
+  const applyFilters = (newFilters) => {
+    fetchProducts(newFilters);
   };
 
   const value = {
@@ -164,10 +213,14 @@ export const ProductProvider = ({ children }) => {
     setPriceRange,
     sortBy,
     setSortBy,
+    loading,
+    error,
     addProduct,
     updateProduct,
     deleteProduct,
-    getProductById
+    getProductById,
+    fetchProducts,
+    applyFilters
   };
 
   return (

@@ -2,6 +2,9 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext();
 
+// API base URL - matches your Flask server
+const API_BASE_URL = 'http://127.0.0.1:5000/api';
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -16,49 +19,69 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for stored auth token
+    // Check for stored auth token and verify with server
     const token = localStorage.getItem('authToken');
-    const userData = localStorage.getItem('userData');
     
-    if (token && userData) {
-      try {
-        const parsedUser = JSON.parse(userData);
-        setUser(parsedUser);
+    if (token) {
+      verifyToken(token);
+    } else {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const verifyToken = async (token) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/verify`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setUser(data.user);
         setIsAuthenticated(true);
-      } catch (error) {
-        console.error('Error parsing user data:', error);
+        // Update localStorage with fresh user data
+        localStorage.setItem('userData', JSON.stringify(data.user));
+      } else {
+        // Invalid token, remove from localStorage
         localStorage.removeItem('authToken');
         localStorage.removeItem('userData');
       }
+    } catch (error) {
+      console.error('Token verification failed:', error);
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('userData');
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
-  }, []);
+  };
 
   const login = async (email, password) => {
     setIsLoading(true);
     
     try {
-      // Mock login - in real app, this would be an API call
-      const mockUsers = [
-        { id: '1', email: 'buyer@example.com', password: 'password', role: 'buyer', username: 'John Buyer' },
-        { id: '2', email: 'seller@example.com', password: 'password', role: 'seller', username: 'Jane Seller' },
-        { id: '3', email: 'admin@example.com', password: 'password', role: 'admin', username: 'Admin User' }
-      ];
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email, password })
+      });
 
-      const foundUser = mockUsers.find(u => u.email === email && u.password === password);
+      const data = await response.json();
       
-      if (!foundUser) {
-        throw new Error('Invalid credentials');
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
       }
 
-      const { password: _, ...userWithoutPassword } = foundUser;
-      const token = `mock-jwt-token-${foundUser.id}`;
+      // Store token and user data
+      localStorage.setItem('authToken', data.token);
+      localStorage.setItem('userData', JSON.stringify(data.user));
       
-      localStorage.setItem('authToken', token);
-      localStorage.setItem('userData', JSON.stringify(userWithoutPassword));
-      
-      setUser(userWithoutPassword);
+      setUser(data.user);
       setIsAuthenticated(true);
       
       return { success: true };
@@ -73,20 +96,25 @@ export const AuthProvider = ({ children }) => {
     setIsLoading(true);
     
     try {
-      // Mock registration - in real app, this would be an API call
-      const newUser = {
-        id: Date.now().toString(),
-        email: userData.email,
-        username: userData.username,
-        role: userData.role || 'buyer'
-      };
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(userData)
+      });
+
+      const data = await response.json();
       
-      const token = `mock-jwt-token-${newUser.id}`;
+      if (!response.ok) {
+        throw new Error(data.error || 'Registration failed');
+      }
+
+      // Store token and user data
+      localStorage.setItem('authToken', data.token);
+      localStorage.setItem('userData', JSON.stringify(data.user));
       
-      localStorage.setItem('authToken', token);
-      localStorage.setItem('userData', JSON.stringify(newUser));
-      
-      setUser(newUser);
+      setUser(data.user);
       setIsAuthenticated(true);
       
       return { success: true };
