@@ -2,7 +2,13 @@ from pymongo import MongoClient
 from config import Config
 import os
 
-client = MongoClient(Config.MONGODB_URI)
+client = MongoClient(
+    Config.MONGODB_URI,
+    serverSelectionTimeoutMS=30000,
+    connectTimeoutMS=30000,
+    socketTimeoutMS=30000,
+    tls=True
+)
 db = client.get_database()
 
 # Create indexes for better performance

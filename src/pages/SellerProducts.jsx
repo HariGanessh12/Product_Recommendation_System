@@ -11,14 +11,17 @@ const SellerProducts = () => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
 
-  const myProducts = products.filter(p => p.seller_id === user?.id);
+  // Fixed: Use both seller_id and seller field, and handle MongoDB _id
+  const myProducts = products.filter(p => 
+    (p.seller_id === user?.id || p.seller === user?.id)
+  );
 
   const totalRevenue = myProducts.reduce((sum, product) => 
-    sum + (product.price * (product.wishlist_count || 0) * 0.1), 0
+    sum + ((product.price || 0) * (product.wishlist_count || 0) * 0.1), 0
   );
 
   const averageRating = myProducts.length > 0
-    ? myProducts.reduce((sum, product) => sum + product.rating, 0) / myProducts.length
+    ? myProducts.reduce((sum, product) => sum + (product.rating || 0), 0) / myProducts.length
     : 0;
 
   const handleEdit = (product) => {
@@ -26,9 +29,14 @@ const SellerProducts = () => {
     setShowForm(true);
   };
 
-  const handleDelete = (productId) => {
-    deleteProduct(productId);
-    setShowDeleteConfirm(null);
+  const handleDelete = async (productId) => {
+    const result = await deleteProduct(productId);
+    if (result.success) {
+      setShowDeleteConfirm(null);
+    } else {
+      console.error('Failed to delete product:', result.error);
+      // You could add a toast notification here
+    }
   };
 
   const closeForm = () => {
@@ -91,7 +99,7 @@ const SellerProducts = () => {
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Total Views</h3>
               <p className="text-2xl font-bold text-purple-600">
-                {myProducts.reduce((sum, product) => sum + (product.wishlist_count * 10), 0)}
+                {myProducts.reduce((sum, product) => sum + ((product.wishlist_count || 0) * 10), 0)}
               </p>
             </div>
           </div>
@@ -142,13 +150,16 @@ const SellerProducts = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {myProducts.map((product) => (
-                  <tr key={product.id} className="hover:bg-gray-50">
+                  <tr key={product._id || product.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <img
                           src={product.image_url}
                           alt={product.name}
                           className="h-12 w-12 object-cover rounded-lg"
+                          onError={(e) => {
+                            e.target.src = `https://via.placeholder.com/48x48/f0f0f0/666666?text=${encodeURIComponent(product.name?.charAt(0) || 'P')}`;
+                          }}
                         />
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900">
@@ -162,25 +173,25 @@ const SellerProducts = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
-                        ${product.price}
+                        ${(product.price || 0).toFixed(2)}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <Star className="h-4 w-4 text-yellow-500 fill-current mr-1" />
                         <span className="text-sm text-gray-900">
-                          {product.rating.toFixed(1)}
+                          {(product.rating || 0).toFixed(1)}
                         </span>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
-                        {product.wishlist_count}
+                        {product.wishlist_count || 0}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
-                        {product.reviews_count}
+                        {product.reviews_count || 0}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -193,7 +204,7 @@ const SellerProducts = () => {
                           <Edit3 className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => setShowDeleteConfirm(product.id)}
+                          onClick={() => setShowDeleteConfirm(product._id || product.id)}
                           className="text-red-600 hover:text-red-900 transition-colors"
                           title="Delete"
                         >

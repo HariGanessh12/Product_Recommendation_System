@@ -22,48 +22,72 @@ export const RecommendationProvider = ({ children }) => {
   useEffect(() => {
     if (user) {
       loadUserData();
+    } else {
+      setWishlist([]);
+      setReviews([]);
+      setRecommendations([]);
     }
   }, [user, products]);
 
   const loadUserData = () => {
-    const userWishlist = JSON.parse(localStorage.getItem(`wishlist_${user.id}`) || '[]');
-    const userReviews = JSON.parse(localStorage.getItem(`reviews_${user.id}`) || '[]');
-    
-    setWishlist(userWishlist);
-    setReviews(userReviews);
-    
-    generateRecommendations(userWishlist, userReviews);
+    try {
+      const savedWishlist = localStorage.getItem(`wishlist_${user.id}`);
+      let userWishlist = [];
+      
+      if (savedWishlist) {
+        const parsed = JSON.parse(savedWishlist);
+        if (parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0].productId) {
+          userWishlist = parsed.map(item => item.productId);
+        } else {
+          userWishlist = parsed;
+        }
+      }
+      
+      const userReviews = JSON.parse(localStorage.getItem(`reviews_${user.id}`) || '[]');
+      
+      setWishlist(userWishlist);
+      setReviews(userReviews);
+      
+      generateRecommendations(userWishlist, userReviews);
+    } catch (error) {
+      console.error('Error loading user data:', error);
+      setWishlist([]);
+      setReviews([]);
+    }
   };
 
   const generateRecommendations = (userWishlist, userReviews) => {
     if (!user || products.length === 0) return;
 
-    // Simple content-based recommendation algorithm
-    const wishlistCategories = userWishlist.map(item => {
-      const product = products.find(p => p.id === item.productId);
+    const wishlistCategories = userWishlist.map(productId => {
+      const product = products.find(p => (p.id || p._id) === productId);
       return product?.category;
     }).filter(Boolean);
 
     const reviewedCategories = userReviews.map(review => {
-      const product = products.find(p => p.id === review.productId);
+      const product = products.find(p => (p.id || p._id) === review.productId);
       return product?.category;
     }).filter(Boolean);
 
     const preferredCategories = [...new Set([...wishlistCategories, ...reviewedCategories])];
     
     const recommended = products
-      .filter(product => 
-        preferredCategories.includes(product.category) &&
-        !userWishlist.some(item => item.productId === product.id) &&
-        !userReviews.some(review => review.productId === product.id)
-      )
-      .sort((a, b) => b.rating - a.rating)
+      .filter(product => {
+        const productId = product.id || product._id;
+        return preferredCategories.includes(product.category) &&
+               !userWishlist.includes(productId) &&
+               !userReviews.some(review => review.productId === productId);
+      })
+      .sort((a, b) => (b.rating || 0) - (a.rating || 0))
       .slice(0, 6);
 
-    // Fallback to popular products if no preferences
     if (recommended.length === 0) {
       const popular = products
-        .sort((a, b) => b.wishlist_count - a.wishlist_count)
+        .filter(product => {
+          const productId = product.id || product._id;
+          return !userWishlist.includes(productId);
+        })
+        .sort((a, b) => (b.wishlist_count || 0) - (a.wishlist_count || 0))
         .slice(0, 6);
       setRecommendations(popular);
     } else {
@@ -72,16 +96,13 @@ export const RecommendationProvider = ({ children }) => {
   };
 
   const addToWishlist = (productId) => {
-    if (!user) return false;
+    if (!user || !productId) return false;
 
-    const newItem = {
-      id: Date.now().toString(),
-      productId,
-      userId: user.id,
-      timestamp: new Date().toISOString()
-    };
+    if (wishlist.includes(productId)) {
+      return false;
+    }
 
-    const updatedWishlist = [...wishlist, newItem];
+    const updatedWishlist = [...wishlist, productId];
     setWishlist(updatedWishlist);
     localStorage.setItem(`wishlist_${user.id}`, JSON.stringify(updatedWishlist));
     
@@ -90,9 +111,9 @@ export const RecommendationProvider = ({ children }) => {
   };
 
   const removeFromWishlist = (productId) => {
-    if (!user) return;
+    if (!user || !productId) return;
 
-    const updatedWishlist = wishlist.filter(item => item.productId !== productId);
+    const updatedWishlist = wishlist.filter(id => id !== productId);
     setWishlist(updatedWishlist);
     localStorage.setItem(`wishlist_${user.id}`, JSON.stringify(updatedWishlist));
     
@@ -116,7 +137,6 @@ export const RecommendationProvider = ({ children }) => {
     setReviews(updatedReviews);
     localStorage.setItem(`reviews_${user.id}`, JSON.stringify(updatedReviews));
     
-    // Also store in global reviews
     const allReviews = JSON.parse(localStorage.getItem('all_reviews') || '[]');
     localStorage.setItem('all_reviews', JSON.stringify([...allReviews, newReview]));
     
@@ -124,8 +144,9 @@ export const RecommendationProvider = ({ children }) => {
     return true;
   };
 
+  // Optimized isInWishlist - no logging
   const isInWishlist = (productId) => {
-    return wishlist.some(item => item.productId === productId);
+    return wishlist.includes(productId);
   };
 
   const getUserReview = (productId) => {
@@ -137,6 +158,13 @@ export const RecommendationProvider = ({ children }) => {
     return allReviews.filter(review => review.productId === productId);
   };
 
+  const clearWishlist = () => {
+    setWishlist([]);
+    if (user) {
+      localStorage.removeItem(`wishlist_${user.id}`);
+    }
+  };
+
   const value = {
     wishlist,
     reviews,
@@ -146,7 +174,8 @@ export const RecommendationProvider = ({ children }) => {
     addReview,
     isInWishlist,
     getUserReview,
-    getAllReviews
+    getAllReviews,
+    clearWishlist
   };
 
   return (

@@ -12,8 +12,9 @@ const Reviews = () => {
 
   const allReviews = JSON.parse(localStorage.getItem('all_reviews') || '[]');
 
+  // Fixed: MongoDB compatibility for product lookup
   const getProductInfo = (productId) => {
-    return products.find(p => p.id === productId);
+    return products.find(p => (p._id || p.id) === productId);
   };
 
   const renderStars = (rating) => {
@@ -136,6 +137,9 @@ const Reviews = () => {
                       src={review.product.image_url}
                       alt={review.product.name}
                       className="w-16 h-16 object-cover rounded-lg"
+                      onError={(e) => {
+                        e.target.src = `https://via.placeholder.com/64x64/f0f0f0/666666?text=${encodeURIComponent(review.product.name?.charAt(0) || 'P')}`;
+                      }}
                     />
                     <div className="flex-1">
                       <div className="flex items-start justify-between mb-2">
@@ -184,6 +188,9 @@ const Reviews = () => {
                     src={review.product.image_url}
                     alt={review.product.name}
                     className="w-16 h-16 object-cover rounded-lg"
+                    onError={(e) => {
+                      e.target.src = `https://via.placeholder.com/64x64/f0f0f0/666666?text=${encodeURIComponent(review.product.name?.charAt(0) || 'P')}`;
+                    }}
                   />
                   <div className="flex-1">
                     <div className="flex items-start justify-between mb-2">

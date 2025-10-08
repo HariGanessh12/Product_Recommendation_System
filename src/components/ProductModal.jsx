@@ -10,17 +10,19 @@ const ProductModal = ({ product, onClose }) => {
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState('');
 
-  const inWishlist = isAuthenticated && isInWishlist(product.id);
-  const userReview = isAuthenticated ? getUserReview(product.id) : null;
-  const allReviews = getAllReviews(product.id);
+  // Fixed: Use both _id and id for MongoDB compatibility
+  const productId = product._id || product.id;
+  const inWishlist = isAuthenticated && isInWishlist(productId);
+  const userReview = isAuthenticated ? getUserReview(productId) : null;
+  const allReviews = getAllReviews(productId);
 
   const handleWishlistToggle = () => {
     if (!isAuthenticated) return;
 
     if (inWishlist) {
-      removeFromWishlist(product.id);
+      removeFromWishlist(productId);
     } else {
-      addToWishlist(product.id);
+      addToWishlist(productId);
     }
   };
 
@@ -28,7 +30,7 @@ const ProductModal = ({ product, onClose }) => {
     e.preventDefault();
     if (!isAuthenticated) return;
 
-    const success = addReview(product.id, rating, reviewText);
+    const success = addReview(productId, rating, reviewText);
     if (success) {
       setShowReviewForm(false);
       setRating(5);
@@ -59,6 +61,9 @@ const ProductModal = ({ product, onClose }) => {
                 src={product.image_url}
                 alt={product.name}
                 className="w-full h-64 lg:h-96 object-cover rounded-lg"
+                onError={(e) => {
+                  e.target.src = `https://via.placeholder.com/400x300/f0f0f0/666666?text=${encodeURIComponent(product.name || 'Product')}`;
+                }}
               />
             </div>
 
@@ -77,17 +82,17 @@ const ProductModal = ({ product, onClose }) => {
               <div className="flex items-center space-x-4 mb-6">
                 <div className="flex items-center space-x-1">
                   <Star className="h-5 w-5 text-yellow-500 fill-current" />
-                  <span className="font-medium">{product.rating.toFixed(1)}</span>
-                  <span className="text-gray-500">({product.reviews_count} reviews)</span>
+                  <span className="font-medium">{(product.rating || 0).toFixed(1)}</span>
+                  <span className="text-gray-500">({product.reviews_count || 0} reviews)</span>
                 </div>
                 <div className="text-gray-500">
-                  {product.wishlist_count} wishlisted
+                  {product.wishlist_count || 0} wishlisted
                 </div>
               </div>
 
               <div className="mb-6">
                 <div className="text-3xl font-bold text-blue-600 mb-2">
-                  ${product.price}
+                  ${(product.price || 0).toFixed(2)}
                 </div>
                 <div className="text-gray-600">
                   Sold by <span className="font-medium">{product.seller_name}</span>
@@ -144,7 +149,7 @@ const ProductModal = ({ product, onClose }) => {
                             key={star}
                             type="button"
                             onClick={() => setRating(star)}
-                            className={`text-2xl ${
+                            className={`text-2xl hover:scale-110 transition-transform ${
                               star <= rating ? 'text-yellow-500' : 'text-gray-300'
                             }`}
                           >
@@ -219,7 +224,7 @@ const ProductModal = ({ product, onClose }) => {
                             <div className="flex space-x-1">
                               {[1, 2, 3, 4, 5].map((star) => (
                                 <Star
-                                  key={star}
+                                  key={`${review.id}-${star}`}
                                   className={`h-4 w-4 ${
                                     star <= review.rating
                                       ? 'text-yellow-500 fill-current'

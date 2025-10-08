@@ -43,9 +43,9 @@ const AuthModal = ({ onClose }) => {
   };
 
   const demoCredentials = [
-    { email: 'buyer@example.com', password: 'password', role: 'Buyer' },
-    { email: 'seller@example.com', password: 'password', role: 'Seller' },
-    { email: 'admin@example.com', password: 'password', role: 'Admin' }
+    { id: 'buyer', email: 'buyer@example.com', password: 'password', role: 'Buyer' },
+    { id: 'seller', email: 'seller@example.com', password: 'password', role: 'Seller' },
+    { id: 'admin', email: 'admin@example.com', password: 'password', role: 'Admin' }
   ];
 
   const fillDemo = (email, password) => {
@@ -72,9 +72,9 @@ const AuthModal = ({ onClose }) => {
           <div className="mb-6 p-4 bg-blue-50 rounded-lg">
             <h3 className="text-sm font-medium text-blue-800 mb-3">Demo Credentials:</h3>
             <div className="space-y-2">
-              {demoCredentials.map((cred, index) => (
+              {demoCredentials.map((cred) => (
                 <button
-                  key={index}
+                  key={cred.id}
                   onClick={() => fillDemo(cred.email, cred.password)}
                   className="w-full text-left p-2 bg-white rounded border hover:bg-gray-50 transition-colors"
                 >

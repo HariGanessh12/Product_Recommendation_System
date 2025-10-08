@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useProducts } from '../contexts/ProductContext';
 import { useRecommendations } from '../contexts/RecommendationContext';
@@ -9,9 +9,65 @@ const Dashboard = ({ onAuthRequired }) => {
   const { user, isAuthenticated } = useAuth();
   const { products } = useProducts();
   const { recommendations, wishlist } = useRecommendations();
+  const [realUsers, setRealUsers] = useState([]);
+
+  // Load real users data
+  useEffect(() => {
+    const loadRealUsers = () => {
+      const allUsers = JSON.parse(localStorage.getItem('all_users') || '[]');
+      const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
+      
+      // Combine and deduplicate users
+      const combinedUsers = [...allUsers, ...authUsers];
+      const uniqueUsers = combinedUsers.filter((user, index, self) => 
+        index === self.findIndex(u => u.email === user.email || u.id === user.id)
+      );
+      
+      setRealUsers(uniqueUsers);
+    };
+
+    loadRealUsers();
+  }, []);
 
   const featuredProducts = products.slice(0, 6);
-  const popularProducts = products.sort((a, b) => b.wishlist_count - a.wishlist_count).slice(0, 4);
+  const popularProducts = products.sort((a, b) => (b.wishlist_count || 0) - (a.wishlist_count || 0)).slice(0, 4);
+
+  // Calculate real seller metrics
+  const getSellerMetrics = () => {
+    const sellerProducts = products.filter(p => (p.seller_id || p.seller) === user.id);
+    const totalRating = sellerProducts.reduce((sum, p) => sum + (p.rating || 0), 0);
+    const avgRating = sellerProducts.length > 0 ? totalRating / sellerProducts.length : 0;
+    const totalRevenue = sellerProducts.reduce((sum, p) => 
+      sum + ((p.price || 0) * (p.wishlist_count || 0) * 0.1), 0
+    );
+
+    return {
+      productCount: sellerProducts.length,
+      avgRating: avgRating,
+      totalRevenue: totalRevenue
+    };
+  };
+
+  // Calculate real admin metrics
+  const getAdminMetrics = () => {
+    const totalReviews = products.reduce((sum, p) => sum + (p.reviews_count || 0), 0);
+    const totalWishlistItems = products.reduce((sum, p) => sum + (p.wishlist_count || 0), 0);
+    
+    // Calculate estimated revenue based on wishlist activity
+    const conversionRate = 0.05; // 5% conversion rate
+    const platformFee = 0.10; // 10% platform fee
+    const estimatedRevenue = products.reduce((sum, product) => {
+      const estimatedSales = (product.wishlist_count || 0) * conversionRate;
+      const productRevenue = estimatedSales * (product.price || 0) * platformFee;
+      return sum + productRevenue;
+    }, 0);
+
+    return {
+      totalReviews,
+      totalWishlistItems,
+      estimatedRevenue
+    };
+  };
 
   const getGreeting = () => {
     if (!isAuthenticated) return "Welcome to ProductHub";
@@ -83,7 +139,8 @@ const Dashboard = ({ onAuthRequired }) => {
           </div>
         );
       
-      case 'seller':
+      case 'seller': {
+        const sellerMetrics = getSellerMetrics();
         return (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div className="bg-blue-50 p-6 rounded-lg">
@@ -92,7 +149,7 @@ const Dashboard = ({ onAuthRequired }) => {
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Products</h3>
                   <p className="text-2xl font-bold text-blue-600">
-                    {products.filter(p => p.seller_id === user.id).length}
+                    {sellerMetrics.productCount}
                   </p>
                   <p className="text-gray-600 text-sm">Listed products</p>
                 </div>
@@ -104,7 +161,9 @@ const Dashboard = ({ onAuthRequired }) => {
                 <Star className="h-8 w-8 text-green-600" />
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Avg Rating</h3>
-                  <p className="text-2xl font-bold text-green-600">4.6</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {sellerMetrics.avgRating.toFixed(1)}
+                  </p>
                   <p className="text-gray-600 text-sm">Customer satisfaction</p>
                 </div>
               </div>
@@ -114,16 +173,20 @@ const Dashboard = ({ onAuthRequired }) => {
               <div className="flex items-center space-x-3">
                 <TrendingUp className="h-8 w-8 text-orange-600" />
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Total Sales</h3>
-                  <p className="text-2xl font-bold text-orange-600">$12,450</p>
-                  <p className="text-gray-600 text-sm">This month</p>
+                  <h3 className="text-lg font-semibold text-gray-900">Estimated Revenue</h3>
+                  <p className="text-2xl font-bold text-orange-600">
+                    ${sellerMetrics.totalRevenue.toFixed(2)}
+                  </p>
+                  <p className="text-gray-600 text-sm">Based on activity</p>
                 </div>
               </div>
             </div>
           </div>
         );
+      }
       
-      case 'admin':
+      case 'admin': {
+        const adminMetrics = getAdminMetrics();
         return (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div className="bg-blue-50 p-6 rounded-lg">
@@ -142,7 +205,9 @@ const Dashboard = ({ onAuthRequired }) => {
                 <Star className="h-8 w-8 text-green-600" />
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Reviews</h3>
-                  <p className="text-2xl font-bold text-green-600">1,247</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {adminMetrics.totalReviews}
+                  </p>
                   <p className="text-gray-600 text-sm">Total reviews</p>
                 </div>
               </div>
@@ -153,7 +218,9 @@ const Dashboard = ({ onAuthRequired }) => {
                 <Heart className="h-8 w-8 text-orange-600" />
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Wishlists</h3>
-                  <p className="text-2xl font-bold text-orange-600">3,456</p>
+                  <p className="text-2xl font-bold text-orange-600">
+                    {adminMetrics.totalWishlistItems}
+                  </p>
                   <p className="text-gray-600 text-sm">Total wishlist items</p>
                 </div>
               </div>
@@ -164,13 +231,16 @@ const Dashboard = ({ onAuthRequired }) => {
                 <TrendingUp className="h-8 w-8 text-purple-600" />
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Revenue</h3>
-                  <p className="text-2xl font-bold text-purple-600">$89,450</p>
-                  <p className="text-gray-600 text-sm">This month</p>
+                  <p className="text-2xl font-bold text-purple-600">
+                    ${adminMetrics.estimatedRevenue.toFixed(2)}
+                  </p>
+                  <p className="text-gray-600 text-sm">Estimated</p>
                 </div>
               </div>
             </div>
           </div>
         );
+      }
       
       default:
         return null;
@@ -203,7 +273,7 @@ const Dashboard = ({ onAuthRequired }) => {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {recommendations.map(product => (
-              <ProductCard key={product.id} product={product} />
+              <ProductCard key={product._id || product.id} product={product} />
             ))}
           </div>
         </section>
@@ -217,7 +287,7 @@ const Dashboard = ({ onAuthRequired }) => {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {popularProducts.map(product => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard key={product._id || product.id} product={product} />
           ))}
         </div>
       </section>
@@ -230,7 +300,7 @@ const Dashboard = ({ onAuthRequired }) => {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {featuredProducts.map(product => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard key={product._id || product.id} product={product} />
           ))}
         </div>
       </section>

@@ -25,16 +25,24 @@ const ProductForm = ({ product, onClose }) => {
         price: parseFloat(formData.price),
         seller_id: user.id,
         seller_name: user.username,
-        image_url: formData.image_url || 'https://images.pexels.com/photos/268533/pexels-photo-268533.jpeg?auto=compress&cs=tinysrgb&w=500'
+        // Fixed: Use reliable placeholder image URL
+        image_url: formData.image_url || 'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=500&h=500&fit=crop'
       };
 
+      let result;
       if (product) {
-        updateProduct(product.id, productData);
+        // Fixed: Use MongoDB compatible ID
+        result = await updateProduct(product._id || product.id, productData);
       } else {
-        addProduct(productData);
+        result = await addProduct(productData);
       }
 
-      onClose();
+      if (result.success) {
+        onClose();
+      } else {
+        console.error('Error saving product:', result.error);
+        // You could show an error message to the user here
+      }
     } catch (error) {
       console.error('Error saving product:', error);
     } finally {
@@ -50,13 +58,14 @@ const ProductForm = ({ product, onClose }) => {
     }));
   };
 
+  // Fixed: Use reliable image URLs
   const suggestedImages = [
-    'https://images.pexels.com/photos/3394650/pexels-photo-3394650.jpeg?auto=compress&cs=tinysrgb&w=500',
-    'https://images.pexels.com/photos/437037/pexels-photo-437037.jpeg?auto=compress&cs=tinysrgb&w=500',
-    'https://images.pexels.com/photos/90946/pexels-photo-90946.jpeg?auto=compress&cs=tinysrgb&w=500',
-    'https://images.pexels.com/photos/586750/pexels-photo-586750.jpeg?auto=compress&cs=tinysrgb&w=500',
-    'https://images.pexels.com/photos/894695/pexels-photo-894695.jpeg?auto=compress&cs=tinysrgb&w=500',
-    'https://images.pexels.com/photos/3822621/pexels-photo-3822621.jpeg?auto=compress&cs=tinysrgb&w=500'
+    'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=500&h=500&fit=crop', // Generic product
+    'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop', // Headphones
+    'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&h=500&fit=crop', // Watch
+    'https://images.unsplash.com/photo-1606983340126-99ab4feaa64a?w=500&h=500&fit=crop', // Camera
+    'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=500&h=500&fit=crop', // Chair
+    'https://images.unsplash.com/photo-1498049794561-7780e7231661?w=500&h=500&fit=crop'  // Electronics
   ];
 
   return (
@@ -183,7 +192,7 @@ const ProductForm = ({ product, onClose }) => {
                 <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
                   {suggestedImages.map((imageUrl, index) => (
                     <button
-                      key={index}
+                      key={`image-${index}`}
                       type="button"
                       onClick={() => setFormData(prev => ({ ...prev, image_url: imageUrl }))}
                       className={`relative group ${
@@ -194,6 +203,9 @@ const ProductForm = ({ product, onClose }) => {
                         src={imageUrl}
                         alt={`Suggestion ${index + 1}`}
                         className="w-full h-16 object-cover rounded-lg hover:opacity-75 transition-opacity"
+                        onError={(e) => {
+                          e.target.src = `https://via.placeholder.com/64x64/f0f0f0/666666?text=${index + 1}`;
+                        }}
                       />
                     </button>
                   ))}
