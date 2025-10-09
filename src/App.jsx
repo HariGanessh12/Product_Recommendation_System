@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProductProvider } from './contexts/ProductContext';
 import { RecommendationProvider } from './contexts/RecommendationContext';
+import { CartProvider } from './contexts/CartContext';
 import Navigation from './components/Navigation';
 import AuthModal from './components/AuthModal';
 import AIAssistant from './components/AIAssistant';
 import Dashboard from './pages/Dashboard';
 import Products from './pages/Products';
+import Cart from './pages/Cart';
 import Wishlist from './pages/Wishlist';
 import Reviews from './pages/Reviews';
 import Analytics from './pages/Analytics';
@@ -29,6 +31,9 @@ function AppContent() {
         return <Dashboard />;
       case 'products':
         return <Products />;
+      case 'cart':
+        return ['buyer', 'admin'].includes(user?.role) ? 
+          <Cart setCurrentPage={setCurrentPage} /> : <Dashboard />;
       case 'wishlist':
         return user?.role === 'buyer' ? <Wishlist /> : <Dashboard />;
       case 'reviews':
@@ -70,7 +75,9 @@ function App() {
     <AuthProvider>
       <ProductProvider>
         <RecommendationProvider>
-          <AppContent />
+          <CartProvider>
+            <AppContent />
+          </CartProvider>
         </RecommendationProvider>
       </ProductProvider>
     </AuthProvider>

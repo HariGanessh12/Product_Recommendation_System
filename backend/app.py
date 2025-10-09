@@ -5,11 +5,10 @@ from config import Config
 import logging
 import os
 
-
 # Import routes
 from routes.auth import auth_bp
 from routes.products import products_bp
-
+from routes.cart import cart_bp
 
 def create_app():
     app = Flask(__name__)
@@ -31,6 +30,7 @@ def create_app():
     # Register blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(products_bp, url_prefix='/api/products')
+    app.register_blueprint(cart_bp, url_prefix='/api/cart')
     
     @app.route('/')
     def home():
@@ -40,7 +40,8 @@ def create_app():
             'status': 'running',
             'endpoints': {
                 'auth': '/api/auth',
-                'products': '/api/products'
+                'products': '/api/products',
+                'cart': '/api/cart'  # Add this line
             }
         })
     
@@ -57,7 +58,6 @@ def create_app():
         return jsonify({'error': 'Internal server error'}), 500
     
     return app
-
 
 if __name__ == '__main__':
     app = create_app()

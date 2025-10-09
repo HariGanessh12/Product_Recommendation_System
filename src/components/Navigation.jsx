@@ -1,13 +1,24 @@
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { ShoppingBag, Heart, Star, BarChart3, Users, Package, LogOut, User, Menu } from 'lucide-react';
+import { useCart } from '../contexts/CartContext';
+import { ShoppingBag, Heart, Star, BarChart3, Users, Package, LogOut, User, Menu, ShoppingCart } from 'lucide-react';
 
 const Navigation = ({ currentPage, setCurrentPage, onAuthClick }) => {
   const { user, isAuthenticated, logout } = useAuth();
+  
+  // Safe cart hook usage with fallback
+  let getCartItemsCount = () => 0;
+  try {
+    const cartContext = useCart();
+    getCartItemsCount = cartContext.getCartItemsCount;
+  } catch (error) {
+    console.log('Cart context not available, using fallback');
+  }
 
   const getBuyerMenuItems = () => [
     { id: 'dashboard', label: 'Home', icon: ShoppingBag },
     { id: 'products', label: 'Products', icon: Package },
+    { id: 'cart', label: 'Cart', icon: ShoppingCart },
     { id: 'wishlist', label: 'Wishlist', icon: Heart },
     { id: 'reviews', label: 'Reviews', icon: Star }
   ];
@@ -21,6 +32,7 @@ const Navigation = ({ currentPage, setCurrentPage, onAuthClick }) => {
   const getAdminMenuItems = () => [
     { id: 'dashboard', label: 'Dashboard', icon: ShoppingBag },
     { id: 'products', label: 'All Products', icon: Package },
+    { id: 'cart', label: 'Cart', icon: ShoppingCart },
     { id: 'user-management', label: 'Users', icon: Users },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 }
   ];
@@ -41,6 +53,10 @@ const Navigation = ({ currentPage, setCurrentPage, onAuthClick }) => {
     setCurrentPage('dashboard');
   };
 
+  // Show cart badge for buyers and admins
+  const showCartBadge = isAuthenticated && (user?.role === 'buyer' || user?.role === 'admin');
+  const cartItemsCount = getCartItemsCount();
+
   const menuItems = getMenuItems();
 
   return (
@@ -57,11 +73,13 @@ const Navigation = ({ currentPage, setCurrentPage, onAuthClick }) => {
             <div className="ml-10 flex items-baseline space-x-4">
               {menuItems.map((item) => {
                 const Icon = item.icon;
+                const isCartItem = item.id === 'cart';
+                
                 return (
                   <button
                     key={item.id}
                     onClick={() => setCurrentPage(item.id)}
-                    className={`px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-1 transition-colors ${
+                    className={`relative px-3 py-2 rounded-md text-sm font-medium flex items-center space-x-1 transition-colors ${
                       currentPage === item.id
                         ? 'bg-blue-600 text-white'
                         : 'text-gray-700 hover:bg-gray-100'
@@ -118,11 +136,13 @@ const Navigation = ({ currentPage, setCurrentPage, onAuthClick }) => {
         <div className="px-2 pt-2 pb-3 space-y-1">
           {menuItems.map((item) => {
             const Icon = item.icon;
+            const isCartItem = item.id === 'cart';
+            
             return (
               <button
                 key={item.id}
                 onClick={() => setCurrentPage(item.id)}
-                className={`w-full text-left px-3 py-2 rounded-md text-base font-medium flex items-center space-x-2 transition-colors ${
+                className={`relative w-full text-left px-3 py-2 rounded-md text-base font-medium flex items-center space-x-2 transition-colors ${
                   currentPage === item.id
                     ? 'bg-blue-600 text-white'
                     : 'text-gray-700 hover:bg-gray-100'

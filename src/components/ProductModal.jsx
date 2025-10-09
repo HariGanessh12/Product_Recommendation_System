@@ -1,20 +1,28 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useRecommendations } from '../contexts/RecommendationContext';
-import { X, Heart, Star, ShoppingCart, MessageCircle } from 'lucide-react';
+import { useCart } from '../contexts/CartContext';
+import { X, Heart, Star, ShoppingCart, MessageCircle, Plus, Minus, Trash2 } from 'lucide-react';
 
 const ProductModal = ({ product, onClose }) => {
   const { user, isAuthenticated } = useAuth();
   const { addToWishlist, removeFromWishlist, isInWishlist, addReview, getUserReview, getAllReviews } = useRecommendations();
+  const { addToCart, cartItems, updateQuantity, removeFromCart } = useCart();
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState('');
+  const [isAdded, setIsAdded] = useState(false);
 
   // Fixed: Use both _id and id for MongoDB compatibility
   const productId = product._id || product.id;
   const inWishlist = isAuthenticated && isInWishlist(productId);
   const userReview = isAuthenticated ? getUserReview(productId) : null;
   const allReviews = getAllReviews(productId);
+
+  // Check if product is in cart and get quantity
+  const cartItem = cartItems.find(item => item.id === productId);
+  const isInCart = !!cartItem;
+  const cartQuantity = cartItem ? cartItem.quantity : 0;
 
   const handleWishlistToggle = () => {
     if (!isAuthenticated) return;
@@ -23,6 +31,42 @@ const ProductModal = ({ product, onClose }) => {
       removeFromWishlist(productId);
     } else {
       addToWishlist(productId);
+    }
+  };
+
+  const handleAddToCart = () => {
+    if (!isAuthenticated) {
+      alert('Please sign in to add items to cart');
+      return;
+    }
+
+    // Only buyers and admins can add to cart
+    if (user.role !== 'buyer' && user.role !== 'admin') {
+      alert('Only buyers can add items to cart');
+      return;
+    }
+
+    const cartProduct = {
+      id: productId,
+      name: product.name,
+      price: product.price,
+      image: product.image_url,
+      category: product.category,
+      seller_name: product.seller_name
+    };
+
+    addToCart(cartProduct, 1);
+    
+    // Show "Added!" state temporarily
+    setIsAdded(true);
+    setTimeout(() => setIsAdded(false), 2000);
+  };
+
+  const handleQuantityChange = (newQuantity) => {
+    if (newQuantity <= 0) {
+      removeFromCart(productId);
+    } else {
+      updateQuantity(productId, newQuantity);
     }
   };
 
@@ -114,13 +158,54 @@ const ProductModal = ({ product, onClose }) => {
                     <span>{inWishlist ? 'Remove from Wishlist' : 'Add to Wishlist'}</span>
                   </button>
 
-                  <button className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2">
-                    <ShoppingCart className="h-5 w-5" />
-                    <span>Add to Cart</span>
-                  </button>
+                  {/* Smart Cart Button */}
+                  {!isInCart ? (
+                    // Add to Cart Button
+                    <button 
+                      onClick={handleAddToCart}
+                      className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2 ${
+                        isAdded 
+                          ? 'bg-green-600 text-white' 
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
+                    >
+                      <ShoppingCart className="h-5 w-5" />
+                      <span>{isAdded ? 'Added!' : 'Add to Cart'}</span>
+                    </button>
+                  ) : (
+                    // Quantity Controls
+                    <div className="flex-1 flex items-center justify-center space-x-1 py-3 px-6 rounded-lg border border-gray-300 bg-gray-50">
+                      <button
+                        onClick={() => handleQuantityChange(cartQuantity - 1)}
+                        className="p-1 rounded-full hover:bg-gray-200 transition-colors"
+                      >
+                        <Minus className="h-4 w-4" />
+                      </button>
+                      
+                      <span className="mx-4 font-semibold text-lg min-w-[2rem] text-center">
+                        {cartQuantity}
+                      </span>
+                      
+                      <button
+                        onClick={() => handleQuantityChange(cartQuantity + 1)}
+                        className="p-1 rounded-full hover:bg-gray-200 transition-colors"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+
+                      <button
+                        onClick={() => removeFromCart(productId)}
+                        className="p-1 rounded-full hover:bg-red-100 text-red-600 transition-colors ml-2"
+                        title="Remove from cart"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
+              {/* Rest of your existing review code stays the same */}
               {/* Review Section */}
               <div className="border-t pt-6">
                 <div className="flex justify-between items-center mb-4">
