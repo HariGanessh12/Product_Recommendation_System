@@ -3,6 +3,7 @@ from models.product import Product
 from models.user import User
 from middleware.auth import auth_required, seller_required
 import math
+from bson import ObjectId
 
 products_bp = Blueprint('products', __name__)
 
@@ -73,22 +74,37 @@ def create_product():
             if not data.get(field):
                 return jsonify({'error': f'{field} is required'}), 400
         
+        # Additional validation
+        try:
+            price = float(data['price'])
+            if price < 0:
+                return jsonify({'error': 'Price must be a positive number'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Price must be a valid number'}), 400
+        
+        try:
+            stock = int(data.get('stock', 0))
+            if stock < 0:
+                return jsonify({'error': 'Stock must be a non-negative number'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Stock must be a valid number'}), 400
+        
         # Get current user
         user = request.current_user
         
         # Create product
         product = Product(
-            name=data['name'],
-            description=data['description'],
-            category=data['category'],
-            price=data['price'],
+            name=data['name'].strip(),
+            description=data['description'].strip(),
+            category=data['category'].strip(),
+            price=price,
             seller_id=str(user['_id']),
             seller_name=user['username'],
             image_url=data.get('image_url'),
-            images=data.get('images'),
-            stock=data.get('stock', 0),
-            tags=data.get('tags'),
-            specifications=data.get('specifications')
+            images=data.get('images', []),
+            stock=stock,
+            tags=data.get('tags', []),
+            specifications=data.get('specifications', {})
         )
         
         product_id = product.save()
@@ -127,6 +143,31 @@ def update_product(product_id):
         data.pop('seller_id', None)
         data.pop('seller_name', None)
         data.pop('created_at', None)
+        data.pop('rating', None)
+        data.pop('reviews_count', None)
+        data.pop('wishlist_count', None)
+        
+        # Validate price and stock if provided
+        if 'price' in data:
+            try:
+                data['price'] = float(data['price'])
+                if data['price'] < 0:
+                    return jsonify({'error': 'Price must be a positive number'}), 400
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Price must be a valid number'}), 400
+        
+        if 'stock' in data:
+            try:
+                data['stock'] = int(data['stock'])
+                if data['stock'] < 0:
+                    return jsonify({'error': 'Stock must be a non-negative number'}), 400
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Stock must be a valid number'}), 400
+        
+        # Trim string fields
+        for field in ['name', 'description', 'category']:
+            if field in data and isinstance(data[field], str):
+                data[field] = data[field].strip()
         
         updated_product = Product.update_by_id(product_id, data)
         
@@ -178,9 +219,173 @@ def get_seller_products(seller_id):
         
         return jsonify({
             'success': True,
-            'products': products
+            'products': products,
+            'count': len(products)
         }), 200
         
     except Exception as e:
         print(f"Error fetching seller products: {e}")
         return jsonify({'error': 'Failed to fetch seller products'}), 500
+
+@products_bp.route('/categories', methods=['GET'])
+def get_categories():
+    """Get all unique product categories"""
+    try:
+        from models import db
+        
+        pipeline = [
+            {'$match': {'is_active': True}},
+            {'$group': {'_id': '$category'}},
+            {'$sort': {'_id': 1}}
+        ]
+        
+        categories = list(db.products.aggregate(pipeline))
+        category_list = [cat['_id'] for cat in categories if cat['_id']]
+        
+        return jsonify({
+            'success': True,
+            'categories': category_list
+        }), 200
+        
+    except Exception as e:
+        print(f"Error fetching categories: {e}")
+        return jsonify({'error': 'Failed to fetch categories'}), 500
+
+@products_bp.route('/featured', methods=['GET'])
+def get_featured_products():
+    """Get featured products (high rating or popular)"""
+    try:
+        from models import db
+        
+        limit = int(request.args.get('limit', 12))
+        
+        # Get products with high ratings or popularity
+        products = list(db.products.find({
+            'is_active': True,
+            '$or': [
+                {'rating': {'$gte': 4.0}},
+                {'wishlist_count': {'$gte': 5}}
+            ]
+        }).sort([('rating', -1), ('wishlist_count', -1)]).limit(limit))
+        
+        # Convert ObjectId to string
+        for product in products:
+            product['_id'] = str(product['_id'])
+            product['seller_id'] = str(product['seller_id'])
+        
+        return jsonify({
+            'success': True,
+            'products': products,
+            'count': len(products)
+        }), 200
+        
+    except Exception as e:
+        print(f"Error fetching featured products: {e}")
+        return jsonify({'error': 'Failed to fetch featured products'}), 500
+
+@products_bp.route('/popular', methods=['GET'])
+def get_popular_products():
+    """Get most popular products based on wishlist count"""
+    try:
+        from models import db
+        
+        limit = int(request.args.get('limit', 10))
+        
+        products = list(db.products.find({
+            'is_active': True
+        }).sort([('wishlist_count', -1), ('rating', -1)]).limit(limit))
+        
+        # Convert ObjectId to string
+        for product in products:
+            product['_id'] = str(product['_id'])
+            product['seller_id'] = str(product['seller_id'])
+        
+        return jsonify({
+            'success': True,
+            'products': products,
+            'count': len(products)
+        }), 200
+        
+    except Exception as e:
+        print(f"Error fetching popular products: {e}")
+        return jsonify({'error': 'Failed to fetch popular products'}), 500
+
+@products_bp.route('/recent', methods=['GET'])
+def get_recent_products():
+    """Get recently added products"""
+    try:
+        from models import db
+        
+        limit = int(request.args.get('limit', 10))
+        
+        products = list(db.products.find({
+            'is_active': True
+        }).sort([('created_at', -1)]).limit(limit))
+        
+        # Convert ObjectId to string
+        for product in products:
+            product['_id'] = str(product['_id'])
+            product['seller_id'] = str(product['seller_id'])
+        
+        return jsonify({
+            'success': True,
+            'products': products,
+            'count': len(products)
+        }), 200
+        
+    except Exception as e:
+        print(f"Error fetching recent products: {e}")
+        return jsonify({'error': 'Failed to fetch recent products'}), 500
+
+@products_bp.route('/search/suggestions', methods=['GET'])
+def get_search_suggestions():
+    """Get search suggestions based on product names and categories"""
+    try:
+        from models import db
+        
+        query = request.args.get('q', '').strip()
+        if not query or len(query) < 2:
+            return jsonify({
+                'success': True,
+                'suggestions': []
+            }), 200
+        
+        # Get product name suggestions
+        name_suggestions = list(db.products.find({
+            'is_active': True,
+            'name': {'$regex': query, '$options': 'i'}
+        }, {'name': 1}).limit(5))
+        
+        # Get category suggestions
+        category_suggestions = list(db.products.find({
+            'is_active': True,
+            'category': {'$regex': query, '$options': 'i'}
+        }, {'category': 1}).limit(3))
+        
+        suggestions = []
+        
+        # Add product names
+        for product in name_suggestions:
+            suggestions.append({
+                'type': 'product',
+                'text': product['name']
+            })
+        
+        # Add unique categories
+        seen_categories = set()
+        for product in category_suggestions:
+            if product['category'] not in seen_categories:
+                suggestions.append({
+                    'type': 'category',
+                    'text': product['category']
+                })
+                seen_categories.add(product['category'])
+        
+        return jsonify({
+            'success': True,
+            'suggestions': suggestions[:8]  # Limit to 8 suggestions
+        }), 200
+        
+    except Exception as e:
+        print(f"Error fetching search suggestions: {e}")
+        return jsonify({'error': 'Failed to fetch search suggestions'}), 500

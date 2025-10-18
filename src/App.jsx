@@ -50,7 +50,7 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{backgroundColor: '#FFEFD5 '}}>
       <Navigation 
         currentPage={currentPage} 
         setCurrentPage={setCurrentPage}

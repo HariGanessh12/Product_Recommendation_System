@@ -4,6 +4,9 @@ from flask_cors import CORS
 from config import Config
 import logging
 import os
+from pymongo import MongoClient
+from pymongo.errors import ServerSelectionTimeoutError
+from datetime import datetime
 
 # Import routes
 from routes.auth import auth_bp
@@ -16,6 +19,25 @@ def create_app():
     
     # Completely suppress werkzeug HTTP request logs
     logging.getLogger('werkzeug').setLevel(logging.ERROR)
+    
+    # Test MongoDB connection at startup
+    try:
+        client = MongoClient(Config.MONGODB_URI, serverSelectionTimeoutMS=5000)
+        client.admin.command('ping')
+        print("MongoDB Atlas connected successfully")
+        
+        # Extract database name from URI or use default
+        db_name = Config.MONGODB_URI.split('/')[-1].split('?')[0] or 'producthub'
+        app.config['DB'] = client[db_name]
+        app.config['MONGO_CLIENT'] = client
+        
+    except ServerSelectionTimeoutError as e:
+        print(f"MongoDB connection failed: {e}")
+        print("Check your MONGODB_URI in .env file")
+        exit(1)
+    except Exception as e:
+        print(f"Database error: {e}")
+        exit(1)
     
     # Initialize extensions
     jwt = JWTManager(app)
@@ -38,16 +60,32 @@ def create_app():
             'message': 'Product Recommendation System API',
             'version': '1.0.0',
             'status': 'running',
+            'database': 'MongoDB Connected',
+            'timestamp': datetime.now().isoformat(),
             'endpoints': {
                 'auth': '/api/auth',
                 'products': '/api/products',
-                'cart': '/api/cart'  # Add this line
+                'cart': '/api/cart'
             }
         })
     
     @app.route('/health')
     def health():
-        return jsonify({'status': 'healthy'}), 200
+        # Test database connection in health check
+        try:
+            app.config['DB'].command('ping')
+            return jsonify({
+                'status': 'healthy',
+                'database': 'connected',
+                'timestamp': datetime.now().isoformat()
+            }), 200
+        except Exception as e:
+            return jsonify({
+                'status': 'unhealthy',
+                'database': 'disconnected',
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }), 503
     
     @app.errorhandler(404)
     def not_found(error):
@@ -66,4 +104,7 @@ if __name__ == '__main__':
     if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
         logging.getLogger('werkzeug').disabled = True
     
+    print("Starting Product Recommendation System")
+    print(f"Server: http://{Config.HOST}:{Config.PORT}")
+    print(f"Debug Mode: {Config.DEBUG}")
     app.run(debug=Config.DEBUG, host=Config.HOST, port=Config.PORT)

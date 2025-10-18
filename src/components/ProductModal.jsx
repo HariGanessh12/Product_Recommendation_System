@@ -7,19 +7,18 @@ import { X, Heart, Star, ShoppingCart, MessageCircle, Plus, Minus, Trash2 } from
 const ProductModal = ({ product, onClose }) => {
   const { user, isAuthenticated } = useAuth();
   const { addToWishlist, removeFromWishlist, isInWishlist, addReview, getUserReview, getAllReviews } = useRecommendations();
-  const { addToCart, cartItems, updateQuantity, removeFromCart } = useCart();
+  const { addToCart, cartItems, updateQuantity, removeFromCart, isLoading: cartLoading } = useCart();
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState('');
-  const [isAdded, setIsAdded] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [cartMessage, setCartMessage] = useState('');
 
-  // Fixed: Use both _id and id for MongoDB compatibility
   const productId = product._id || product.id;
   const inWishlist = isAuthenticated && isInWishlist(productId);
   const userReview = isAuthenticated ? getUserReview(productId) : null;
   const allReviews = getAllReviews(productId);
 
-  // Check if product is in cart and get quantity
   const cartItem = cartItems.find(item => item.id === productId);
   const isInCart = !!cartItem;
   const cartQuantity = cartItem ? cartItem.quantity : 0;
@@ -34,39 +33,77 @@ const ProductModal = ({ product, onClose }) => {
     }
   };
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
     if (!isAuthenticated) {
-      alert('Please sign in to add items to cart');
+      setCartMessage('Please sign in to add items to cart');
+      setTimeout(() => setCartMessage(''), 3000);
       return;
     }
 
-    // Only buyers and admins can add to cart
     if (user.role !== 'buyer' && user.role !== 'admin') {
-      alert('Only buyers can add items to cart');
+      setCartMessage('Only buyers can add items to cart');
+      setTimeout(() => setCartMessage(''), 3000);
       return;
     }
 
-    const cartProduct = {
-      id: productId,
-      name: product.name,
-      price: product.price,
-      image: product.image_url,
-      category: product.category,
-      seller_name: product.seller_name
-    };
+    if ((product.stock || 0) <= 0) {
+      setCartMessage('This item is out of stock');
+      setTimeout(() => setCartMessage(''), 3000);
+      return;
+    }
 
-    addToCart(cartProduct, 1);
-    
-    // Show "Added!" state temporarily
-    setIsAdded(true);
-    setTimeout(() => setIsAdded(false), 2000);
+    setIsAdding(true);
+    setCartMessage('Adding to cart...');
+
+    try {
+      const result = await addToCart(product, 1);
+      
+      if (result && result.success) {
+        setCartMessage('Added to cart successfully');
+        setTimeout(() => setCartMessage(''), 3000);
+      } else {
+        setCartMessage(`Error: ${result ? result.message : 'Unknown error'}`);
+        setTimeout(() => setCartMessage(''), 5000);
+      }
+    } catch (error) {
+      setCartMessage('Failed to add to cart');
+      setTimeout(() => setCartMessage(''), 5000);
+    } finally {
+      setIsAdding(false);
+    }
   };
 
-  const handleQuantityChange = (newQuantity) => {
-    if (newQuantity <= 0) {
-      removeFromCart(productId);
-    } else {
-      updateQuantity(productId, newQuantity);
+  const handleQuantityChange = async (newQuantity) => {
+    try {
+      let result;
+      
+      if (newQuantity <= 0) {
+        result = await removeFromCart(productId);
+      } else {
+        result = await updateQuantity(productId, newQuantity);
+      }
+      
+      if (!result.success) {
+        setCartMessage(`Error: ${result.message}`);
+        setTimeout(() => setCartMessage(''), 5000);
+      }
+    } catch (error) {
+      setCartMessage('Failed to update cart');
+      setTimeout(() => setCartMessage(''), 5000);
+    }
+  };
+
+  const handleRemoveFromCart = async () => {
+    try {
+      const result = await removeFromCart(productId);
+      
+      if (!result.success) {
+        setCartMessage(`Error: ${result.message}`);
+        setTimeout(() => setCartMessage(''), 5000);
+      }
+    } catch (error) {
+      setCartMessage('Failed to remove from cart');
+      setTimeout(() => setCartMessage(''), 5000);
     }
   };
 
@@ -82,7 +119,9 @@ const ProductModal = ({ product, onClose }) => {
     }
   };
 
-  const canReview = isAuthenticated && user.role === 'buyer' && !userReview;
+  const canReview = isAuthenticated && user?.role === 'buyer' && !userReview;
+  const outOfStock = (product.stock || 0) <= 0;
+  const buttonDisabled = isAdding || cartLoading || !isAuthenticated || outOfStock;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -99,7 +138,6 @@ const ProductModal = ({ product, onClose }) => {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Product Image */}
             <div>
               <img
                 src={product.image_url}
@@ -111,7 +149,6 @@ const ProductModal = ({ product, onClose }) => {
               />
             </div>
 
-            {/* Product Details */}
             <div>
               <div className="mb-4">
                 <span className="inline-block bg-blue-100 text-blue-800 text-sm px-3 py-1 rounded-full">
@@ -135,17 +172,28 @@ const ProductModal = ({ product, onClose }) => {
               </div>
 
               <div className="mb-6">
-                <div className="text-3xl font-bold text-blue-600 mb-2">
-                  ${(product.price || 0).toFixed(2)}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-3xl font-bold text-blue-600">
+                    ${(product.price || 0).toFixed(2)}
+                  </div>
+                  <div className={`text-sm px-3 py-1 rounded-full font-medium ${
+                    outOfStock
+                      ? 'bg-red-100 text-red-800'
+                      : (product.stock <= 5 ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800')
+                  }`}>
+                    {outOfStock
+                      ? 'Out of stock'
+                      : `${product.stock} in stock`
+                    }
+                  </div>
                 </div>
                 <div className="text-gray-600">
                   Sold by <span className="font-medium">{product.seller_name}</span>
                 </div>
               </div>
 
-              {/* Action Buttons */}
               {isAuthenticated && (
-                <div className="flex space-x-4 mb-6">
+                <div className="flex space-x-4 mb-4">
                   <button
                     onClick={handleWishlistToggle}
                     className={`flex-1 flex items-center justify-center space-x-2 py-3 px-6 rounded-lg font-medium transition-colors ${
@@ -158,26 +206,36 @@ const ProductModal = ({ product, onClose }) => {
                     <span>{inWishlist ? 'Remove from Wishlist' : 'Add to Wishlist'}</span>
                   </button>
 
-                  {/* Smart Cart Button */}
                   {!isInCart ? (
-                    // Add to Cart Button
                     <button 
                       onClick={handleAddToCart}
+                      disabled={buttonDisabled}
                       className={`flex-1 py-3 px-6 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2 ${
-                        isAdded 
-                          ? 'bg-green-600 text-white' 
+                        buttonDisabled
+                          ? 'bg-gray-400 cursor-not-allowed text-white'
                           : 'bg-blue-600 text-white hover:bg-blue-700'
                       }`}
                     >
-                      <ShoppingCart className="h-5 w-5" />
-                      <span>{isAdded ? 'Added!' : 'Add to Cart'}</span>
+                      {isAdding || cartLoading ? (
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <ShoppingCart className="h-5 w-5" />
+                      )}
+                      <span>
+                        {outOfStock 
+                          ? 'Out of Stock'
+                          : isAdding || cartLoading 
+                            ? 'Adding...' 
+                            : 'Add to Cart'
+                        }
+                      </span>
                     </button>
                   ) : (
-                    // Quantity Controls
                     <div className="flex-1 flex items-center justify-center space-x-1 py-3 px-6 rounded-lg border border-gray-300 bg-gray-50">
                       <button
                         onClick={() => handleQuantityChange(cartQuantity - 1)}
-                        className="p-1 rounded-full hover:bg-gray-200 transition-colors"
+                        disabled={cartLoading}
+                        className="p-1 rounded-full hover:bg-gray-200 transition-colors disabled:opacity-50"
                       >
                         <Minus className="h-4 w-4" />
                       </button>
@@ -188,14 +246,16 @@ const ProductModal = ({ product, onClose }) => {
                       
                       <button
                         onClick={() => handleQuantityChange(cartQuantity + 1)}
-                        className="p-1 rounded-full hover:bg-gray-200 transition-colors"
+                        disabled={cartLoading || cartQuantity >= (product.stock || 0)}
+                        className="p-1 rounded-full hover:bg-gray-200 transition-colors disabled:opacity-50"
                       >
                         <Plus className="h-4 w-4" />
                       </button>
 
                       <button
-                        onClick={() => removeFromCart(productId)}
-                        className="p-1 rounded-full hover:bg-red-100 text-red-600 transition-colors ml-2"
+                        onClick={handleRemoveFromCart}
+                        disabled={cartLoading}
+                        className="p-1 rounded-full hover:bg-red-100 text-red-600 transition-colors ml-2 disabled:opacity-50"
                         title="Remove from cart"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -205,8 +265,22 @@ const ProductModal = ({ product, onClose }) => {
                 </div>
               )}
 
-              {/* Rest of your existing review code stays the same */}
-              {/* Review Section */}
+              {cartMessage && (
+                <div className={`text-sm p-3 rounded-lg mb-4 ${
+                  cartMessage.includes('successfully') 
+                    ? 'bg-green-100 text-green-800 border border-green-200' 
+                    : 'bg-red-100 text-red-800 border border-red-200'
+                }`}>
+                  {cartMessage}
+                </div>
+              )}
+
+              {!isAuthenticated && (
+                <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-blue-800">Please sign in to add items to cart</p>
+                </div>
+              )}
+
               <div className="border-t pt-6">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-semibold">Reviews</h3>
@@ -221,7 +295,6 @@ const ProductModal = ({ product, onClose }) => {
                   )}
                 </div>
 
-                {/* Review Form */}
                 {showReviewForm && (
                   <form onSubmit={handleSubmitReview} className="mb-6 p-4 bg-gray-50 rounded-lg">
                     <div className="mb-4">
@@ -274,7 +347,6 @@ const ProductModal = ({ product, onClose }) => {
                   </form>
                 )}
 
-                {/* User's Review */}
                 {userReview && (
                   <div className="mb-4 p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
                     <div className="flex items-center space-x-2 mb-2">
@@ -296,7 +368,6 @@ const ProductModal = ({ product, onClose }) => {
                   </div>
                 )}
 
-                {/* All Reviews */}
                 <div className="space-y-4 max-h-64 overflow-y-auto">
                   {allReviews.length === 0 ? (
                     <p className="text-gray-500 text-center py-4">No reviews yet</p>
