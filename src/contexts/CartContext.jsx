@@ -64,7 +64,6 @@ export const CartProvider = ({ children }) => {
       } else {
         const errorData = await response.text();
         console.error('CartContext: Failed to load cart:', response.status, errorData);
-        // If unauthorized, clear cart
         if (response.status === 401) {
           setCartItems([]);
         }
@@ -111,7 +110,17 @@ export const CartProvider = ({ children }) => {
       if (response.ok) {
         const data = await response.json();
         console.log('CartContext: Add to cart success:', data);
-        await loadCartFromAPI(); // Reload cart from backend
+        await loadCartFromAPI();
+        
+        // NEW: Dispatch cart updated event for recommendations
+        window.dispatchEvent(new CustomEvent('cart-updated', { 
+          detail: { 
+            action: 'add', 
+            productId: product.id || product._id,
+            quantity: quantity
+          }
+        }));
+        
         return { success: true, message: 'Item added to cart successfully' };
       } else {
         const errorData = await response.text();
@@ -158,7 +167,16 @@ export const CartProvider = ({ children }) => {
       });
 
       if (response.ok) {
-        await loadCartFromAPI(); // Reload cart
+        await loadCartFromAPI();
+        
+        // NEW: Dispatch cart updated event for recommendations
+        window.dispatchEvent(new CustomEvent('cart-updated', { 
+          detail: { 
+            action: 'remove', 
+            productId: productId
+          }
+        }));
+        
         return { success: true, message: 'Item removed from cart' };
       } else {
         const errorData = await response.text();
@@ -197,7 +215,17 @@ export const CartProvider = ({ children }) => {
       });
 
       if (response.ok) {
-        await loadCartFromAPI(); // Reload cart
+        await loadCartFromAPI();
+        
+        // NEW: Dispatch cart updated event for recommendations
+        window.dispatchEvent(new CustomEvent('cart-updated', { 
+          detail: { 
+            action: 'update', 
+            productId: productId,
+            quantity: quantity
+          }
+        }));
+        
         return { success: true, message: 'Cart updated successfully' };
       } else {
         const errorData = await response.text();
@@ -233,6 +261,14 @@ export const CartProvider = ({ children }) => {
 
       if (response.ok) {
         setCartItems([]);
+        
+        // NEW: Dispatch cart updated event for recommendations
+        window.dispatchEvent(new CustomEvent('cart-updated', { 
+          detail: { 
+            action: 'clear'
+          }
+        }));
+        
         return { success: true, message: 'Cart cleared successfully' };
       } else {
         const errorData = await response.text();

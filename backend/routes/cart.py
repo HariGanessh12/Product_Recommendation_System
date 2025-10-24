@@ -3,8 +3,18 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from bson import ObjectId
 from datetime import datetime
 from models import db
+from services.recommendation_service import recommendation_service  # NEW: Import recommendation service
 
 cart_bp = Blueprint('cart', __name__)
+
+# NEW: Helper function to refresh user recommendations
+def refresh_user_recommendations(user_id):
+    """Refresh recommendations when user behavior changes"""
+    try:
+        recommendation_service.clear_user_cache(user_id)
+        print(f"Refreshed recommendations for user {user_id}")
+    except Exception as e:
+        print(f"Failed to refresh recommendations for user {user_id}: {e}")
 
 @cart_bp.route('', methods=['GET'])
 @jwt_required()
@@ -13,14 +23,11 @@ def get_cart():
     try:
         user_id = get_jwt_identity()
         
-        # DEBUG: Print user_id for troubleshooting
         print(f"DEBUG: Getting cart for user_id: {user_id}")
         print(f"DEBUG: User_id type: {type(user_id)}")
         
-        # Convert user_id to string if it's not already
         user_id_str = str(user_id)
         
-        # Get cart items from MongoDB for this specific user
         pipeline = [
             {
                 '$match': {'user_id': user_id_str}
@@ -56,7 +63,6 @@ def get_cart():
         
         cart_items = list(db.cart.aggregate(pipeline))
         
-        # DEBUG: Print cart query results
         print(f"DEBUG: Found {len(cart_items)} cart items for user {user_id_str}")
         
         formatted_items = []
@@ -85,7 +91,7 @@ def get_cart():
             'cartItems': formatted_items,
             'count': len(formatted_items),
             'total_amount': total_amount,
-            'user_id': user_id_str  # Include for debugging
+            'user_id': user_id_str
         }), 200
         
     except Exception as e:
@@ -102,7 +108,6 @@ def add_to_cart():
         user_id = get_jwt_identity()
         data = request.get_json()
         
-        # DEBUG: Print user_id and data
         print(f"DEBUG: Adding to cart for user_id: {user_id}")
         print(f"DEBUG: User_id type: {type(user_id)}")
         print(f"DEBUG: Cart data: {data}")
@@ -119,16 +124,13 @@ def add_to_cart():
         if quantity <= 0:
             return jsonify({'error': 'Quantity must be greater than 0'}), 400
         
-        # Convert user_id to string for consistency
         user_id_str = str(user_id)
         
-        # Verify product exists
         try:
             product = db.products.find_one({'_id': ObjectId(product_id)})
             if not product:
                 return jsonify({'error': 'Product not found'}), 404
             
-            # Check stock availability
             if product.get('stock', 0) < quantity:
                 return jsonify({'error': 'Insufficient stock available'}), 400
                 
@@ -136,7 +138,6 @@ def add_to_cart():
             print(f"DEBUG: Product verification error: {e}")
             return jsonify({'error': 'Invalid product ID'}), 400
         
-        # Check if item already exists in cart for this user
         existing_item = db.cart.find_one({
             'user_id': user_id_str,
             'product_id': ObjectId(product_id)
@@ -146,10 +147,8 @@ def add_to_cart():
         print(f"DEBUG: Found existing item: {existing_item is not None}")
         
         if existing_item:
-            # Update quantity
             new_quantity = existing_item['quantity'] + quantity
             
-            # Check if new quantity exceeds stock
             if product.get('stock', 0) < new_quantity:
                 return jsonify({'error': 'Adding this quantity would exceed available stock'}), 400
             
@@ -168,9 +167,8 @@ def add_to_cart():
                 return jsonify({'error': 'Failed to update cart item'}), 500
                 
         else:
-            # Add new item to MongoDB
             cart_item = {
-                'user_id': user_id_str,  # Store as string for consistency
+                'user_id': user_id_str,
                 'product_id': ObjectId(product_id),
                 'quantity': quantity,
                 'created_at': datetime.utcnow(),
@@ -179,6 +177,9 @@ def add_to_cart():
             result = db.cart.insert_one(cart_item)
             print(f"DEBUG: Added new cart item with ID: {result.inserted_id}")
             print(f"DEBUG: Cart item data: {cart_item}")
+        
+        # NEW: Refresh recommendations after cart add
+        refresh_user_recommendations(user_id_str)
         
         return jsonify({
             'success': True,
@@ -211,17 +212,18 @@ def update_cart_item():
         if not product_id:
             return jsonify({'error': 'Product ID is required'}), 400
         
-        # Convert user_id to string for consistency
         user_id_str = str(user_id)
         
         if quantity <= 0:
-            # Remove item if quantity is 0 or negative
             result = db.cart.delete_one({
                 'user_id': user_id_str,
                 'product_id': ObjectId(product_id)
             })
             
             if result.deleted_count > 0:
+                # NEW: Refresh recommendations after cart removal
+                refresh_user_recommendations(user_id_str)
+                
                 return jsonify({
                     'success': True,
                     'message': 'Item removed from cart'
@@ -229,7 +231,6 @@ def update_cart_item():
             else:
                 return jsonify({'error': 'Item not found in cart'}), 404
         else:
-            # Verify product stock
             try:
                 product = db.products.find_one({'_id': ObjectId(product_id)})
                 if not product:
@@ -241,7 +242,6 @@ def update_cart_item():
             except Exception as e:
                 return jsonify({'error': 'Invalid product ID'}), 400
             
-            # Update quantity
             result = db.cart.update_one(
                 {
                     'user_id': user_id_str,
@@ -256,6 +256,9 @@ def update_cart_item():
             )
             
             if result.modified_count > 0:
+                # NEW: Refresh recommendations after cart update
+                refresh_user_recommendations(user_id_str)
+                
                 return jsonify({
                     'success': True,
                     'message': 'Cart updated successfully'
@@ -290,7 +293,6 @@ def remove_from_cart():
         if not product_id:
             return jsonify({'error': 'Product ID is required'}), 400
         
-        # Convert user_id to string for consistency
         user_id_str = str(user_id)
         
         result = db.cart.delete_one({
@@ -301,6 +303,9 @@ def remove_from_cart():
         print(f"DEBUG: Removal result - deleted_count: {result.deleted_count}")
         
         if result.deleted_count > 0:
+            # NEW: Refresh recommendations after cart removal
+            refresh_user_recommendations(user_id_str)
+            
             return jsonify({
                 'success': True,
                 'message': 'Item removed from cart successfully'
@@ -323,7 +328,6 @@ def clear_cart():
         
         print(f"DEBUG: Clearing cart for user_id: {user_id}")
         
-        # Convert user_id to string for consistency
         user_id_str = str(user_id)
         
         result = db.cart.delete_many({
@@ -331,6 +335,10 @@ def clear_cart():
         })
         
         print(f"DEBUG: Clear result - deleted_count: {result.deleted_count}")
+        
+        # NEW: Refresh recommendations after cart clear
+        if result.deleted_count > 0:
+            refresh_user_recommendations(user_id_str)
         
         return jsonify({
             'success': True,
@@ -351,7 +359,6 @@ def get_cart_count():
         user_id = get_jwt_identity()
         user_id_str = str(user_id)
         
-        # Get total quantity of all items
         pipeline = [
             {'$match': {'user_id': user_id_str}},
             {'$group': {'_id': None, 'total_quantity': {'$sum': '$quantity'}}}

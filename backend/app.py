@@ -12,6 +12,8 @@ from datetime import datetime
 from routes.auth import auth_bp
 from routes.products import products_bp
 from routes.cart import cart_bp
+from routes.recommendations import recommendations_bp
+from routes.analytics import analytics_bp
 
 def create_app():
     app = Flask(__name__)
@@ -53,7 +55,9 @@ def create_app():
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(products_bp, url_prefix='/api/products')
     app.register_blueprint(cart_bp, url_prefix='/api/cart')
-    
+    app.register_blueprint(recommendations_bp, url_prefix='/api/recommendations')
+    app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
+
     @app.route('/')
     def home():
         return jsonify({

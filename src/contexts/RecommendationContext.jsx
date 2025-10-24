@@ -4,6 +4,9 @@ import { useProducts } from './ProductContext';
 
 const RecommendationContext = createContext();
 
+// API base URL
+const API_BASE_URL = 'http://127.0.0.1:5000/api';
+
 export const useRecommendations = () => {
   const context = useContext(RecommendationContext);
   if (!context) {
@@ -13,22 +16,101 @@ export const useRecommendations = () => {
 };
 
 export const RecommendationProvider = ({ children }) => {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { products } = useProducts();
   const [wishlist, setWishlist] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
+  
+  // Enhanced recommendation state
+  const [sbertRecommendations, setSbertRecommendations] = useState({
+    similar: {},
+    personalized: [],
+    popular: [],
+    trending: []
+  });
+  
+  // NEW: Hybrid recommendations state
+  const [hybridRecommendations, setHybridRecommendations] = useState({
+    personalized: [],
+    similar: {},
+    cf_personalized: [],
+    cf_similar: {}
+  });
+  
+  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  
+  // NEW: Algorithm performance tracking
+  const [algorithmPreference, setAlgorithmPreference] = useState('hybrid'); // hybrid, content, cf
 
   useEffect(() => {
     if (user) {
       loadUserData();
+      loadAllRecommendations();
     } else {
-      setWishlist([]);
-      setReviews([]);
-      setRecommendations([]);
+      clearAllRecommendations();
     }
   }, [user, products]);
 
+  // Auto-refresh when user actions change
+  useEffect(() => {
+    if (isAuthenticated && refreshTrigger > 0) {
+      console.log('Refreshing recommendations due to user action');
+      clearCache();
+      loadAllRecommendations();
+    }
+  }, [refreshTrigger, isAuthenticated]);
+
+  // Listen for cart update events
+  useEffect(() => {
+    const handleCartUpdate = (event) => {
+      console.log('Cart updated, refreshing recommendations', event.detail);
+      // Track cart action
+      trackCartAction(event.detail.productId, event.detail.action, event.detail.quantity);
+      setRefreshTrigger(prev => prev + 1);
+    };
+
+    window.addEventListener('cart-updated', handleCartUpdate);
+    
+    return () => {
+      window.removeEventListener('cart-updated', handleCartUpdate);
+    };
+  }, []);
+
+  // Helper function to get auth headers
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('authToken');
+    return {
+      'Content-Type': 'application/json',
+      ...(token && { 'Authorization': `Bearer ${token}` })
+    };
+  };
+
+  // Clear all caches
+  const clearCache = () => {
+    setSbertRecommendations({
+      similar: {},
+      personalized: [],
+      popular: [],
+      trending: []
+    });
+    setHybridRecommendations({
+      personalized: [],
+      similar: {},
+      cf_personalized: [],
+      cf_similar: {}
+    });
+  };
+
+  const clearAllRecommendations = () => {
+    setWishlist([]);
+    setReviews([]);
+    setRecommendations([]);
+    clearCache();
+  };
+
+  // Load user data (existing function)
   const loadUserData = () => {
     try {
       const savedWishlist = localStorage.getItem(`wishlist_${user.id}`);
@@ -95,6 +177,370 @@ export const RecommendationProvider = ({ children }) => {
     }
   };
 
+  // NEW: Load all types of recommendations
+  const loadAllRecommendations = async () => {
+    if (!isAuthenticated) {
+      await getSbertPopularProducts();
+      return;
+    }
+
+    setIsLoadingRecommendations(true);
+    try {
+      await Promise.all([
+        // Hybrid recommendations (primary)
+        getHybridPersonalizedRecommendations(),
+        
+        // Individual algorithms for comparison
+        getSbertPersonalizedRecommendations(),
+        getCFPersonalizedRecommendations(),
+        
+        // General recommendations
+        getSbertPopularProducts(),
+        getSbertTrendingProducts()
+      ]);
+    } catch (error) {
+      console.error('Error loading all recommendations:', error);
+    } finally {
+      setIsLoadingRecommendations(false);
+    }
+  };
+
+  const loadSbertRecommendations = async () => {
+    if (!isAuthenticated) {
+      await getSbertPopularProducts();
+      return;
+    }
+
+    setIsLoadingRecommendations(true);
+    try {
+      await Promise.all([
+        getSbertPersonalizedRecommendations(),
+        getSbertPopularProducts(),
+        getSbertTrendingProducts()
+      ]);
+    } catch (error) {
+      console.error('Error loading S-BERT recommendations:', error);
+    } finally {
+      setIsLoadingRecommendations(false);
+    }
+  };
+
+
+  // NEW: Hybrid Recommendations
+  const getHybridPersonalizedRecommendations = async (limit = 10) => {
+    if (!isAuthenticated) return [];
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/recommendations/hybrid/personalized?limit=${limit}`,
+        {
+          headers: getAuthHeaders()
+        }
+      );
+
+      if (!response.ok) throw new Error('Failed to fetch hybrid personalized recommendations');
+
+      const data = await response.json();
+      
+      setHybridRecommendations(prev => ({
+        ...prev,
+        personalized: data.recommendations
+      }));
+
+      return data.recommendations;
+    } catch (error) {
+      console.error('Error fetching hybrid personalized recommendations:', error);
+      return [];
+    }
+  };
+
+  const getHybridSimilarProducts = async (productId, limit = 6, minSimilarity = 0.2) => {
+    const cacheKey = `${productId}_${limit}_${minSimilarity}`;
+    
+    if (hybridRecommendations.similar[cacheKey]) {
+      return hybridRecommendations.similar[cacheKey];
+    }
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/recommendations/hybrid/similar/${productId}?limit=${limit}&min_similarity=${minSimilarity}`,
+        {
+          headers: getAuthHeaders()
+        }
+      );
+
+      if (!response.ok) throw new Error('Failed to fetch hybrid similar products');
+
+      const data = await response.json();
+
+      setHybridRecommendations(prev => ({
+        ...prev,
+        similar: {
+          ...prev.similar,
+          [cacheKey]: data.recommendations
+        }
+      }));
+
+      return data.recommendations;
+    } catch (error) {
+      console.error('Error fetching hybrid similar products:', error);
+      return [];
+    }
+  };
+
+  // NEW: Pure Collaborative Filtering
+  const getCFPersonalizedRecommendations = async (limit = 10) => {
+    if (!isAuthenticated) return [];
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/recommendations/cf-personalized?limit=${limit}`,
+        {
+          headers: getAuthHeaders()
+        }
+      );
+
+      if (!response.ok) throw new Error('Failed to fetch CF personalized recommendations');
+
+      const data = await response.json();
+      
+      setHybridRecommendations(prev => ({
+        ...prev,
+        cf_personalized: data.recommendations
+      }));
+
+      return data.recommendations;
+    } catch (error) {
+      console.error('Error fetching CF personalized recommendations:', error);
+      return [];
+    }
+  };
+
+  const getCFSimilarProducts = async (productId, limit = 6) => {
+    const cacheKey = `cf_${productId}_${limit}`;
+    
+    if (hybridRecommendations.cf_similar[cacheKey]) {
+      return hybridRecommendations.cf_similar[cacheKey];
+    }
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/recommendations/cf-similar/${productId}?limit=${limit}`,
+        {
+          headers: getAuthHeaders()
+        }
+      );
+
+      if (!response.ok) throw new Error('Failed to fetch CF similar products');
+
+      const data = await response.json();
+
+      setHybridRecommendations(prev => ({
+        ...prev,
+        cf_similar: {
+          ...prev.cf_similar,
+          [cacheKey]: data.recommendations
+        }
+      }));
+
+      return data.recommendations;
+    } catch (error) {
+      console.error('Error fetching CF similar products:', error);
+      return [];
+    }
+  };
+
+  // Enhanced S-BERT functions (keeping existing ones)
+  const getSbertSimilarProducts = async (productId, limit = 6, minSimilarity = 0.3) => {
+    const cacheKey = `${productId}_${limit}_${minSimilarity}`;
+    
+    if (sbertRecommendations.similar[cacheKey]) {
+      return sbertRecommendations.similar[cacheKey];
+    }
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/recommendations/similar/${productId}?limit=${limit}&min_similarity=${minSimilarity}`,
+        {
+          headers: getAuthHeaders()
+        }
+      );
+
+      if (!response.ok) throw new Error('Failed to fetch similar products');
+
+      const data = await response.json();
+
+      setSbertRecommendations(prev => ({
+        ...prev,
+        similar: {
+          ...prev.similar,
+          [cacheKey]: data.recommendations
+        }
+      }));
+
+      return data.recommendations;
+    } catch (error) {
+      console.error('Error fetching similar products:', error);
+      return [];
+    }
+  };
+
+  const getSbertPersonalizedRecommendations = async (limit = 10) => {
+    if (!isAuthenticated) return [];
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/recommendations/personalized?limit=${limit}`,
+        {
+          headers: getAuthHeaders()
+        }
+      );
+
+      if (!response.ok) throw new Error('Failed to fetch personalized recommendations');
+
+      const data = await response.json();
+      
+      setSbertRecommendations(prev => ({
+        ...prev,
+        personalized: data.recommendations
+      }));
+
+      return data.recommendations;
+    } catch (error) {
+      console.error('Error fetching personalized recommendations:', error);
+      return [];
+    }
+  };
+
+  const getSbertPopularProducts = async (limit = 10) => {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/recommendations/popular?limit=${limit}`,
+        {
+          headers: getAuthHeaders()
+        }
+      );
+
+      if (!response.ok) throw new Error('Failed to fetch popular products');
+
+      const data = await response.json();
+      
+      setSbertRecommendations(prev => ({
+        ...prev,
+        popular: data.recommendations
+      }));
+
+      return data.recommendations;
+    } catch (error) {
+      console.error('Error fetching popular products:', error);
+      return [];
+    }
+  };
+
+  const getSbertTrendingProducts = async (limit = 10, days = 7) => {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/recommendations/trending?limit=${limit}&days=${days}`,
+        {
+          headers: getAuthHeaders()
+        }
+      );
+
+      if (!response.ok) throw new Error('Failed to fetch trending products');
+
+      const data = await response.json();
+      
+      setSbertRecommendations(prev => ({
+        ...prev,
+        trending: data.recommendations
+      }));
+
+      return data.recommendations;
+    } catch (error) {
+      console.error('Error fetching trending products:', error);
+      return [];
+    }
+  };
+
+  // Enhanced tracking functions
+  const trackProductView = async (productId, source = 'product_page') => {
+    if (!isAuthenticated) return;
+    
+    try {
+      await fetch(`${API_BASE_URL}/analytics/track-view`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          product_id: productId,
+          source: source,
+          session_id: Date.now().toString()
+        })
+      });
+    } catch (error) {
+      console.error('Failed to track view:', error);
+    }
+  };
+
+  const trackRecommendationClick = async (productId, recommendationType, sourceProductId = null, scores = {}) => {
+    if (!isAuthenticated) return;
+    
+    try {
+      await fetch(`${API_BASE_URL}/analytics/track-recommendation-click`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          product_id: productId,
+          recommendation_type: recommendationType,
+          source_product_id: sourceProductId,
+          similarity_score: scores.similarity_score,
+          hybrid_score: scores.hybrid_score,
+          cf_score: scores.cf_score,
+          content_score: scores.content_score,
+          algorithm: scores.algorithm || algorithmPreference
+        })
+      });
+    } catch (error) {
+      console.error('Failed to track recommendation click:', error);
+    }
+  };
+
+  // NEW: Track cart and wishlist actions
+  const trackCartAction = async (productId, action, quantity = 1) => {
+    if (!isAuthenticated) return;
+    
+    try {
+      await fetch(`${API_BASE_URL}/analytics/track-cart-action`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          product_id: productId,
+          action: action,
+          quantity: quantity
+        })
+      });
+    } catch (error) {
+      console.error('Failed to track cart action:', error);
+    }
+  };
+
+  const trackWishlistAction = async (productId, action) => {
+    if (!isAuthenticated) return;
+    
+    try {
+      await fetch(`${API_BASE_URL}/analytics/track-wishlist-action`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          product_id: productId,
+          action: action
+        })
+      });
+    } catch (error) {
+      console.error('Failed to track wishlist action:', error);
+    }
+  };
+
+  // Enhanced wishlist functions with tracking
   const addToWishlist = (productId) => {
     if (!user || !productId) return false;
 
@@ -107,6 +553,11 @@ export const RecommendationProvider = ({ children }) => {
     localStorage.setItem(`wishlist_${user.id}`, JSON.stringify(updatedWishlist));
     
     generateRecommendations(updatedWishlist, reviews);
+    
+    // Track action and trigger refresh
+    trackWishlistAction(productId, 'add');
+    setRefreshTrigger(prev => prev + 1);
+    
     return true;
   };
 
@@ -118,6 +569,10 @@ export const RecommendationProvider = ({ children }) => {
     localStorage.setItem(`wishlist_${user.id}`, JSON.stringify(updatedWishlist));
     
     generateRecommendations(updatedWishlist, reviews);
+    
+    // Track action and trigger refresh
+    trackWishlistAction(productId, 'remove');
+    setRefreshTrigger(prev => prev + 1);
   };
 
   const addReview = (productId, rating, reviewText) => {
@@ -141,10 +596,45 @@ export const RecommendationProvider = ({ children }) => {
     localStorage.setItem('all_reviews', JSON.stringify([...allReviews, newReview]));
     
     generateRecommendations(wishlist, updatedReviews);
+    setRefreshTrigger(prev => prev + 1);
+    
     return true;
   };
 
-  // Optimized isInWishlist - no logging
+  // NEW: Get recommendations based on algorithm preference
+  const getRecommendationsByAlgorithm = (algorithm = algorithmPreference) => {
+    switch (algorithm) {
+      case 'hybrid':
+        return hybridRecommendations.personalized;
+      case 'content':
+        return sbertRecommendations.personalized;
+      case 'cf':
+        return hybridRecommendations.cf_personalized;
+      default:
+        return hybridRecommendations.personalized.length > 0 
+          ? hybridRecommendations.personalized 
+          : sbertRecommendations.personalized;
+    }
+  };
+
+  const getSimilarProductsByAlgorithm = (productId, algorithm = algorithmPreference) => {
+    const cacheKey = `${productId}_6_0.3`; // Default cache key format
+
+    switch (algorithm) {
+      case 'hybrid':
+        const hybridCacheKey = `${productId}_6_0.2`;
+        return hybridRecommendations.similar[hybridCacheKey] || [];
+      case 'content':
+        return sbertRecommendations.similar[cacheKey] || [];
+      case 'cf':
+        return hybridRecommendations.cf_similar[`cf_${productId}_6`] || [];
+      default:
+        return hybridRecommendations.similar[`${productId}_6_0.2`] || 
+               sbertRecommendations.similar[cacheKey] || [];
+    }
+  };
+
+  // Existing helper functions
   const isInWishlist = (productId) => {
     return wishlist.includes(productId);
   };
@@ -166,6 +656,7 @@ export const RecommendationProvider = ({ children }) => {
   };
 
   const value = {
+    // Existing functionality
     wishlist,
     reviews,
     recommendations,
@@ -175,7 +666,40 @@ export const RecommendationProvider = ({ children }) => {
     isInWishlist,
     getUserReview,
     getAllReviews,
-    clearWishlist
+    clearWishlist,
+    
+    // Enhanced S-BERT functionality
+    sbertRecommendations,
+    getSbertSimilarProducts,
+    getSbertPersonalizedRecommendations,
+    getSbertPopularProducts,
+    getSbertTrendingProducts,
+    loadSbertRecommendations,
+    
+    // NEW: Hybrid functionality
+    hybridRecommendations,
+    getHybridPersonalizedRecommendations,
+    getHybridSimilarProducts,
+    getCFPersonalizedRecommendations,
+    getCFSimilarProducts,
+    
+    // Algorithm selection and comparison
+    algorithmPreference,
+    setAlgorithmPreference,
+    getRecommendationsByAlgorithm,
+    getSimilarProductsByAlgorithm,
+    
+    // Enhanced tracking
+    trackProductView,
+    trackRecommendationClick,
+    trackCartAction,
+    trackWishlistAction,
+    
+    // Utility functions
+    isLoadingRecommendations,
+    loadAllRecommendations,
+    refreshRecommendations: () => setRefreshTrigger(prev => prev + 1),
+    clearCache
   };
 
   return (
