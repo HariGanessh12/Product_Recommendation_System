@@ -39,7 +39,6 @@ export const RecommendationProvider = ({ children }) => {
   });
   
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
   
   // NEW: Algorithm performance tracking
   const [algorithmPreference, setAlgorithmPreference] = useState('hybrid'); // hybrid, content, cf
@@ -47,28 +46,36 @@ export const RecommendationProvider = ({ children }) => {
   useEffect(() => {
     if (user) {
       loadUserData();
-      loadAllRecommendations();
     } else {
       clearAllRecommendations();
     }
   }, [user, products]);
 
-  // Auto-refresh when user actions change
+  // NEW: Auto-refresh every 60 seconds
   useEffect(() => {
-    if (isAuthenticated && refreshTrigger > 0) {
-      console.log('Refreshing recommendations due to user action');
-      clearCache();
-      loadAllRecommendations();
-    }
-  }, [refreshTrigger, isAuthenticated]);
+    if (!isAuthenticated) return;
 
-  // Listen for cart update events
+    // Refresh immediately on login
+    loadAllRecommendations();
+
+    // Set up auto-refresh every 60 seconds (1 minute)
+    const refreshInterval = setInterval(() => {
+      console.log('Auto-refreshing recommendations...');
+      loadAllRecommendations();
+    }, 60000); // 60 seconds
+
+    // Cleanup interval on unmount or logout
+    return () => {
+      clearInterval(refreshInterval);
+    };
+  }, [isAuthenticated]); // Only depend on authentication status
+
+  // Listen for cart update events (ONLY ONE - removed duplicate)
   useEffect(() => {
     const handleCartUpdate = (event) => {
-      console.log('Cart updated, refreshing recommendations', event.detail);
-      // Track cart action
+      console.log('Cart updated', event.detail);
+      // Track cart action but don't trigger immediate refresh
       trackCartAction(event.detail.productId, event.detail.action, event.detail.quantity);
-      setRefreshTrigger(prev => prev + 1);
     };
 
     window.addEventListener('cart-updated', handleCartUpdate);
@@ -224,7 +231,6 @@ export const RecommendationProvider = ({ children }) => {
       setIsLoadingRecommendations(false);
     }
   };
-
 
   // NEW: Hybrid Recommendations
   const getHybridPersonalizedRecommendations = async (limit = 10) => {
@@ -540,39 +546,77 @@ export const RecommendationProvider = ({ children }) => {
     }
   };
 
-  // Enhanced wishlist functions with tracking
-  const addToWishlist = (productId) => {
+  // FIXED: Enhanced wishlist functions with backend integration (removed immediate refresh)
+  const addToWishlist = async (productId) => {
     if (!user || !productId) return false;
 
     if (wishlist.includes(productId)) {
       return false;
     }
 
-    const updatedWishlist = [...wishlist, productId];
-    setWishlist(updatedWishlist);
-    localStorage.setItem(`wishlist_${user.id}`, JSON.stringify(updatedWishlist));
-    
-    generateRecommendations(updatedWishlist, reviews);
-    
-    // Track action and trigger refresh
-    trackWishlistAction(productId, 'add');
-    setRefreshTrigger(prev => prev + 1);
-    
-    return true;
+    try {
+      // Call backend API
+      const response = await fetch(`${API_BASE_URL}/wishlist/add`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          product_id: productId
+        })
+      });
+
+      if (response.ok) {
+        // Update local state
+        const updatedWishlist = [...wishlist, productId];
+        setWishlist(updatedWishlist);
+        localStorage.setItem(`wishlist_${user.id}`, JSON.stringify(updatedWishlist));
+        
+        generateRecommendations(updatedWishlist, reviews);
+        
+        // REMOVED immediate tracking and refresh - will happen on auto-refresh
+        // trackWishlistAction(productId, 'add');     // Removed
+        // setRefreshTrigger(prev => prev + 1);      // Removed
+        
+        return true;
+      } else {
+        console.error('Failed to add to wishlist:', await response.text());
+        return false;
+      }
+    } catch (error) {
+      console.error('Error adding to wishlist:', error);
+      return false;
+    }
   };
 
-  const removeFromWishlist = (productId) => {
+  const removeFromWishlist = async (productId) => {
     if (!user || !productId) return;
 
-    const updatedWishlist = wishlist.filter(id => id !== productId);
-    setWishlist(updatedWishlist);
-    localStorage.setItem(`wishlist_${user.id}`, JSON.stringify(updatedWishlist));
-    
-    generateRecommendations(updatedWishlist, reviews);
-    
-    // Track action and trigger refresh
-    trackWishlistAction(productId, 'remove');
-    setRefreshTrigger(prev => prev + 1);
+    try {
+      // Call backend API
+      const response = await fetch(`${API_BASE_URL}/wishlist/remove`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          product_id: productId
+        })
+      });
+
+      if (response.ok) {
+        // Update local state
+        const updatedWishlist = wishlist.filter(id => id !== productId);
+        setWishlist(updatedWishlist);
+        localStorage.setItem(`wishlist_${user.id}`, JSON.stringify(updatedWishlist));
+        
+        generateRecommendations(updatedWishlist, reviews);
+        
+        // REMOVED immediate tracking and refresh - will happen on auto-refresh
+        // trackWishlistAction(productId, 'remove');  // Removed
+        // setRefreshTrigger(prev => prev + 1);       // Removed
+      } else {
+        console.error('Failed to remove from wishlist:', await response.text());
+      }
+    } catch (error) {
+      console.error('Error removing from wishlist:', error);
+    }
   };
 
   const addReview = (productId, rating, reviewText) => {
@@ -596,7 +640,8 @@ export const RecommendationProvider = ({ children }) => {
     localStorage.setItem('all_reviews', JSON.stringify([...allReviews, newReview]));
     
     generateRecommendations(wishlist, updatedReviews);
-    setRefreshTrigger(prev => prev + 1);
+    // REMOVED immediate refresh - will happen on auto-refresh
+    // setRefreshTrigger(prev => prev + 1);  // Removed
     
     return true;
   };
@@ -698,7 +743,7 @@ export const RecommendationProvider = ({ children }) => {
     // Utility functions
     isLoadingRecommendations,
     loadAllRecommendations,
-    refreshRecommendations: () => setRefreshTrigger(prev => prev + 1),
+    refreshRecommendations: () => loadAllRecommendations(), // FIXED: Direct call instead of trigger
     clearCache
   };
 

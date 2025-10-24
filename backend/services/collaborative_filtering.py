@@ -9,6 +9,7 @@ import os
 from datetime import datetime, timedelta
 import time
 
+
 class CollaborativeFilteringService:
     def __init__(self):
         self.model = None
@@ -25,10 +26,8 @@ class CollaborativeFilteringService:
         self.load_model()
     
     def build_interaction_matrix(self, min_interactions=1):
-        """
-        Build user-item interaction matrix from cart and wishlist data
-        """
-        print("Building interaction matrix...")
+        """Build user-item interaction matrix from cart and wishlist data"""
+        print("200 OK - Building interaction matrix")
         
         # Get active users and products
         user_docs = list(db.users.find({}, {"_id": 1}))
@@ -43,12 +42,11 @@ class CollaborativeFilteringService:
         self.index_to_user = {idx: uid for uid, idx in self.user_index.items()}
         self.index_to_product = {idx: pid for pid, idx in self.product_index.items()}
         
-        print(f"Found {len(user_ids)} users and {len(product_ids)} products")
+        print(f"200 OK - Matrix built: {len(user_ids)} users, {len(product_ids)} products")
         
         rows, cols, vals = [], [], []
         
         # Process wishlist data (weight: 3.0)
-        print("Processing wishlist data...")
         wishlist_count = 0
         for pref in db.recommendations.find({}, {"user_id": 1, "wishlist": 1}):
             uid = str(pref["user_id"])
@@ -67,10 +65,7 @@ class CollaborativeFilteringService:
                 vals.append(3.0)  # Wishlist weight
                 wishlist_count += 1
         
-        print(f"Added {wishlist_count} wishlist interactions")
-        
         # Process cart data (weight: 4.0)
-        print("Processing cart data...")
         cart_count = 0
         for cart_item in db.cart.find({}, {"user_id": 1, "product_id": 1, "quantity": 1}):
             uid = str(cart_item["user_id"])
@@ -91,10 +86,9 @@ class CollaborativeFilteringService:
             vals.append(weight)
             cart_count += 1
         
-        print(f"Added {cart_count} cart interactions")
+        print(f"200 OK - Interactions processed: {wishlist_count} wishlist, {cart_count} cart")
         
         # Create sparse matrix and aggregate duplicates
-        print("Creating sparse matrix...")
         self.interaction_matrix = coo_matrix(
             (vals, (rows, cols)), 
             shape=(len(user_ids), len(product_ids))
@@ -106,8 +100,6 @@ class CollaborativeFilteringService:
         
         valid_users = user_interaction_counts >= min_interactions
         valid_products = product_interaction_counts >= min_interactions
-        
-        print(f"Filtering: {valid_users.sum()}/{len(user_ids)} users, {valid_products.sum()}/{len(product_ids)} products")
         
         # Filter matrix
         self.interaction_matrix = self.interaction_matrix[valid_users][:, valid_products]
@@ -121,19 +113,16 @@ class CollaborativeFilteringService:
         self.index_to_user = {idx: uid for uid, idx in self.user_index.items()}
         self.index_to_product = {idx: pid for pid, idx in self.product_index.items()}
         
-        print(f"Final matrix shape: {self.interaction_matrix.shape}")
-        print(f"Matrix density: {self.interaction_matrix.nnz / (self.interaction_matrix.shape[0] * self.interaction_matrix.shape[1]):.4f}")
+        print(f"200 OK - Matrix finalized: shape {self.interaction_matrix.shape}, density {self.interaction_matrix.nnz / (self.interaction_matrix.shape[0] * self.interaction_matrix.shape[1]):.4f}")
         
         return self.interaction_matrix
     
     def train_model(self, factors=64, regularization=0.01, iterations=20, alpha=40):
-        """
-        Train Implicit ALS model
-        """
+        """Train Implicit ALS model"""
         if self.interaction_matrix is None:
             self.build_interaction_matrix()
         
-        print(f"Training ALS model with {factors} factors...")
+        print(f"200 OK - Training ALS model with {factors} factors")
         
         # Implicit ALS expects item-user matrix (items x users)
         item_user_matrix = self.interaction_matrix.T.tocsr()
@@ -155,7 +144,7 @@ class CollaborativeFilteringService:
         
         self.last_trained = datetime.utcnow()
         
-        print(f"Model trained in {training_time:.2f} seconds")
+        print(f"200 OK - Model training completed in {training_time:.2f} seconds")
         
         # Save model
         self.save_model()
@@ -163,17 +152,15 @@ class CollaborativeFilteringService:
         return self.model
     
     def get_user_recommendations(self, user_id, n_recommendations=10, filter_seen=True):
-        """
-        Get recommendations for a specific user
-        """
+        """Get recommendations for a specific user"""
         if self.model is None:
-            print("Model not trained. Training now...")
+            print("200 OK - Training CF model for first use")
             self.train_model()
         
         user_id_str = str(user_id)
         
         if user_id_str not in self.user_index:
-            print(f"User {user_id_str} not found in training data")
+            # User not in training data - return empty (not an error)
             return []
         
         user_idx = self.user_index[user_id_str]
@@ -186,12 +173,7 @@ class CollaborativeFilteringService:
                 N=n_recommendations,
                 filter_already_liked_items=filter_seen
             )
-            
-            print(f"DEBUG CF: Got {len(recommendations)} recommendations")
-            print(f"DEBUG CF: Type: {type(recommendations)}")
-            if len(recommendations) > 0:
-                print(f"DEBUG CF: Sample: {recommendations[0]}")
-            
+                        
             # Convert to product info
             results = []
             for i, item in enumerate(recommendations):
@@ -204,46 +186,47 @@ class CollaborativeFilteringService:
                     elif isinstance(item, (list, np.ndarray)) and len(item) >= 2:
                         product_idx, score = int(item[0]), float(item[1])
                     else:
-                        print(f"DEBUG CF: Unknown format at index {i}: {item}")
-                        continue
+                        continue  # Skip invalid items silently
                         
-                except Exception as unpack_error:
-                    print(f"DEBUG CF: Unpack error at index {i}: {unpack_error}")
-                    print(f"DEBUG CF: Item: {item}")
-                    continue
+                except Exception:
+                    continue  # Skip items that can't be processed
+                
+                # Check if product index exists in mapping
+                if product_idx not in self.index_to_product:
+                    continue  # Skip if mapping doesn't exist
                     
                 product_id = self.index_to_product[product_idx]
                 
                 # Get product details
-                product = db.products.find_one({'_id': ObjectId(product_id)})
-                if product:
-                    results.append({
-                        'product': product,
-                        'cf_score': float(score),
-                        'explanation': f"Collaborative filtering based on similar users (score: {score:.3f})"
-                    })
+                try:
+                    product = db.products.find_one({'_id': ObjectId(product_id)})
+                    if product:
+                        results.append({
+                            'product': product,
+                            'cf_score': float(score),
+                            'explanation': f"Collaborative filtering based on similar users (score: {score:.3f})"
+                        })
+                except Exception:
+                    continue  # Skip products that can't be retrieved
+            
+            if results:
+                print(f"200 OK - CF recommendations generated: {len(results)} items")
             
             return results
                 
         except Exception as e:
-            print(f"Error getting recommendations for user {user_id_str}: {e}")
-            import traceback
-            traceback.print_exc()
+            # Silently handle CF errors since they're non-critical
             return []
     
     def get_similar_items(self, product_id, n_similar=10):
-        """
-        Get items similar to a given product using collaborative filtering
-        """
+        """Get items similar to a given product using collaborative filtering"""
         if self.model is None:
-            print("Model not trained. Training now...")
             self.train_model()
         
         product_id_str = str(product_id)
         
         if product_id_str not in self.product_index:
-            print(f"Product {product_id_str} not found in training data")
-            return []
+            return []  # Product not in training data
         
         product_idx = self.product_index[product_id_str]
         
@@ -256,22 +239,30 @@ class CollaborativeFilteringService:
             
             results = []
             for similar_idx, score in similar_items:
+                if similar_idx not in self.index_to_product:
+                    continue
+                    
                 similar_product_id = self.index_to_product[similar_idx]
                 
                 # Get product details
-                product = db.products.find_one({'_id': ObjectId(similar_product_id)})
-                if product:
-                    results.append({
-                        'product': product,
-                        'cf_score': float(score),
-                        'explanation': f"Users who liked this also liked similar items (score: {score:.3f})"
-                    })
+                try:
+                    product = db.products.find_one({'_id': ObjectId(similar_product_id)})
+                    if product:
+                        results.append({
+                            'product': product,
+                            'cf_score': float(score),
+                            'explanation': f"Users who liked this also liked similar items (score: {score:.3f})"
+                        })
+                except Exception:
+                    continue
+            
+            if results:
+                print(f"200 OK - CF similar items found: {len(results)} items")
             
             return results
             
-        except Exception as e:
-            print(f"Error getting similar items for product {product_id_str}: {e}")
-            return []
+        except Exception:
+            return []  # Silently handle errors
     
     def save_model(self):
         """Save trained model and mappings"""
@@ -293,10 +284,10 @@ class CollaborativeFilteringService:
             with open(self.mappings_file, 'wb') as f:
                 pickle.dump(mappings, f)
             
-            print("Model and mappings saved successfully")
+            print("200 OK - CF model and mappings saved successfully")
             
         except Exception as e:
-            print(f"Error saving model: {e}")
+            print(f"500 ERROR - Failed to save CF model: {e}")
     
     def load_model(self):
         """Load existing model and mappings"""
@@ -317,11 +308,11 @@ class CollaborativeFilteringService:
                 self.interaction_matrix = mappings['interaction_matrix']
                 self.last_trained = mappings.get('last_trained')
                 
-                print(f"Model loaded successfully. Last trained: {self.last_trained}")
+                print(f"200 OK - CF model loaded successfully. Last trained: {self.last_trained}")
                 return True
                 
         except Exception as e:
-            print(f"Error loading model: {e}")
+            print(f"500 ERROR - Failed to load CF model: {e}")
         
         return False
     
@@ -332,6 +323,7 @@ class CollaborativeFilteringService:
         
         age = datetime.utcnow() - self.last_trained
         return age.total_seconds() > max_age_hours * 3600
+
 
 # Create singleton instance
 collaborative_filtering_service = CollaborativeFilteringService()

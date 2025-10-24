@@ -8,13 +8,17 @@ import os
 from datetime import datetime
 import time
 
+
 class RecommendationService:
     def __init__(self):
         # Use a pre-trained S-BERT model
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
         self.embeddings_cache = {}
-        self.personalized_cache = {}  # NEW: Cache for personalized recommendations
+        self.personalized_cache = {}
         self.cache_file = 'product_embeddings_cache.pkl'
+        self.collaborative_weight = 0.4
+        self.content_weight = 0.4
+        self.popularity_weight = 0.2
         self.load_embeddings_cache()
     
     def load_embeddings_cache(self):
@@ -23,9 +27,9 @@ class RecommendationService:
             if os.path.exists(self.cache_file):
                 with open(self.cache_file, 'rb') as f:
                     self.embeddings_cache = pickle.load(f)
-                print(f"Loaded {len(self.embeddings_cache)} cached embeddings")
+                print(f"200 OK - Loaded {len(self.embeddings_cache)} cached embeddings")
         except Exception as e:
-            print(f"Error loading embeddings cache: {e}")
+            print(f"500 ERROR - Failed to load embeddings cache: {e}")
             self.embeddings_cache = {}
     
     def save_embeddings_cache(self):
@@ -33,15 +37,12 @@ class RecommendationService:
         try:
             with open(self.cache_file, 'wb') as f:
                 pickle.dump(self.embeddings_cache, f)
-            print(f"Saved {len(self.embeddings_cache)} embeddings to cache")
+            # Only log when significant changes occur
         except Exception as e:
-            print(f"Error saving embeddings cache: {e}")
+            print(f"500 ERROR - Failed to save embeddings cache: {e}")
     
     def generate_product_text(self, product):
-        """
-        Generate comprehensive text representation of product
-        for better semantic understanding
-        """
+        """Generate comprehensive text representation of product for better semantic understanding"""
         text_parts = [
             product.get('name', ''),
             product.get('description', ''),
@@ -49,7 +50,6 @@ class RecommendationService:
             ' '.join(product.get('tags', []))
         ]
         
-        # Add specifications if available
         specs = product.get('specifications', {})
         if specs:
             spec_text = ' '.join([f"{k} {v}" for k, v in specs.items()])
@@ -58,59 +58,37 @@ class RecommendationService:
         return ' '.join(filter(None, text_parts))
     
     def get_product_embedding(self, product):
-        """
-        Get or generate embedding for a product
-        Uses caching for performance
-        """
+        """Get or generate embedding for a product with caching"""
         product_id = str(product.get('_id'))
         
-        # Check cache first
         if product_id in self.embeddings_cache:
             return self.embeddings_cache[product_id]
         
-        # Generate embedding
         product_text = self.generate_product_text(product)
         embedding = self.model.encode(product_text, convert_to_tensor=False)
         
-        # Cache it
         self.embeddings_cache[product_id] = embedding
-        
         return embedding
     
     def generate_all_embeddings(self):
-        """
-        Generate embeddings for all active products
-        Useful for batch processing
-        """
+        """Generate embeddings for all active products"""
         try:
             products = list(db.products.find({'is_active': True}))
-            print(f"Generating embeddings for {len(products)} products...")
+            print(f"200 OK - Generating embeddings for {len(products)} products")
             
             for product in products:
                 self.get_product_embedding(product)
             
             self.save_embeddings_cache()
-            print("All embeddings generated and cached")
-            
+            print("200 OK - All embeddings generated successfully")
             return True
         except Exception as e:
-            print(f"Error generating embeddings: {e}")
+            print(f"500 ERROR - Failed to generate embeddings: {e}")
             return False
     
     def get_similar_products(self, product_id, top_n=10, min_similarity=0.3):
-        """
-        Find similar products using S-BERT embeddings
-        
-        Args:
-            product_id: ID of the target product
-            top_n: Number of similar products to return
-            min_similarity: Minimum similarity threshold (0-1)
-        
-        Returns:
-            List of similar products with similarity scores and explanations
-        """
+        """Find similar products using S-BERT embeddings"""
         try:
-            # Get target product
             target_product = db.products.find_one({
                 '_id': ObjectId(product_id),
                 'is_active': True
@@ -119,10 +97,7 @@ class RecommendationService:
             if not target_product:
                 return []
             
-            # Get target embedding
             target_embedding = self.get_product_embedding(target_product)
-            
-            # Get all other active products
             other_products = list(db.products.find({
                 '_id': {'$ne': ObjectId(product_id)},
                 'is_active': True
@@ -131,20 +106,16 @@ class RecommendationService:
             if not other_products:
                 return []
             
-            # Calculate similarities
             similarities = []
             
             for product in other_products:
                 product_embedding = self.get_product_embedding(product)
-                
-                # Calculate cosine similarity
                 similarity = cosine_similarity(
                     [target_embedding],
                     [product_embedding]
                 )[0][0]
                 
                 if similarity >= min_similarity:
-                    # Generate explanation
                     explanation = self.generate_explanation(
                         target_product, 
                         product, 
@@ -157,28 +128,20 @@ class RecommendationService:
                         'explanation': explanation
                     })
             
-            # Sort by similarity score
             similarities.sort(key=lambda x: x['similarity_score'], reverse=True)
-            
-            # Return top N
             return similarities[:top_n]
             
         except Exception as e:
-            print(f"Error getting similar products: {e}")
+            print(f"500 ERROR - Failed to find similar products: {e}")
             return []
     
     def generate_explanation(self, target_product, similar_product, similarity_score):
-        """
-        Generate human-readable explanation for why products are similar
-        This is the Explainable AI component
-        """
+        """Generate human-readable explanation for product similarity"""
         explanations = []
         
-        # Category match
         if target_product.get('category') == similar_product.get('category'):
             explanations.append(f"Same category: {target_product.get('category')}")
         
-        # Price similarity
         target_price = target_product.get('price', 0)
         similar_price = similar_product.get('price', 0)
         price_diff_percent = abs(target_price - similar_price) / target_price * 100 if target_price > 0 else 0
@@ -186,7 +149,6 @@ class RecommendationService:
         if price_diff_percent < 20:
             explanations.append(f"Similar price range (within {price_diff_percent:.0f}%)")
         
-        # Tag overlap
         target_tags = set(target_product.get('tags', []))
         similar_tags = set(similar_product.get('tags', []))
         common_tags = target_tags.intersection(similar_tags)
@@ -194,7 +156,6 @@ class RecommendationService:
         if common_tags:
             explanations.append(f"Common features: {', '.join(list(common_tags)[:3])}")
         
-        # Semantic similarity
         if similarity_score >= 0.7:
             explanations.append("Very similar product descriptions")
         elif similarity_score >= 0.5:
@@ -204,23 +165,17 @@ class RecommendationService:
         
         return ' | '.join(explanations) if explanations else f"Similarity score: {similarity_score:.2f}"
     
-    # NEW: Clear user cache method
     def clear_user_cache(self, user_id):
         """Clear cached recommendations for a user"""
         try:
             user_id_str = str(user_id)
             if user_id_str in self.personalized_cache:
                 del self.personalized_cache[user_id_str]
-                print(f"Cleared recommendation cache for user {user_id}")
         except Exception as e:
-            print(f"Error clearing cache for user {user_id}: {e}")
+            print(f"500 ERROR - Failed to clear cache for user {user_id}: {e}")
     
-    # NEW: Enhanced personalized recommendations
     def get_enhanced_personalized_recommendations(self, user_id, top_n=10):
-        """
-        Enhanced personalized recommendations with real-time user behavior
-        Includes caching with TTL
-        """
+        """Enhanced personalized recommendations with real-time user behavior"""
         try:
             user_id_str = str(user_id)
             
@@ -229,11 +184,8 @@ class RecommendationService:
                 cached_data = self.personalized_cache[user_id_str]
                 cached_time = cached_data.get('timestamp', 0)
                 if time.time() - cached_time < 300:  # 5 minutes
-                    print(f"Returning cached recommendations for user {user_id}")
                     return cached_data['recommendations']
-            
-            print(f"Generating fresh recommendations for user {user_id}")
-            
+
             # Get user's recent cart items
             recent_cart = list(db.cart.find({'user_id': user_id}).limit(10))
             cart_product_ids = [item['product_id'] for item in recent_cart]
@@ -246,8 +198,6 @@ class RecommendationService:
             all_interest_ids = list(set(cart_product_ids + wishlist_ids))
             
             if not all_interest_ids:
-                # Cold start - return popular products
-                print(f"No user interests found, returning popular products")
                 return self.get_popular_products(top_n)
             
             # Get products user is interested in
@@ -269,7 +219,6 @@ class RecommendationService:
                 for item in similar:
                     product_id = str(item['product']['_id'])
                     
-                    # Skip if already in user's interests
                     if ObjectId(product_id) in all_interest_ids:
                         continue
                     
@@ -297,26 +246,37 @@ class RecommendationService:
                 'timestamp': time.time()
             }
             
-            print(f"Generated {len(sorted_recs)} recommendations for user {user_id}")
             return sorted_recs
             
         except Exception as e:
-            print(f"Error getting enhanced personalized recommendations: {e}")
+            print(f"500 ERROR - Failed to generate personalized recommendations: {e}")
             return self.get_popular_products(top_n)
     
-    # UPDATED: Use enhanced method as default
     def get_personalized_recommendations(self, user_id, top_n=10):
-        """
-        Get personalized recommendations based on user behavior
-        Now uses enhanced method with caching
-        """
+        """Get personalized recommendations based on user behavior"""
         return self.get_enhanced_personalized_recommendations(user_id, top_n)
     
+    def get_hybrid_personalized_recommendations(self, user_id, top_n=10):
+        """Hybrid personalized recommendations combining content-based and popularity"""
+        try:
+            content_recs = self.get_enhanced_personalized_recommendations(user_id, top_n)
+            
+            # Format for hybrid response (add hybrid_score field)
+            for rec in content_recs:
+                rec['hybrid_score'] = rec['score'] * self.content_weight + \
+                                    (rec['product'].get('rating', 0) / 5.0) * self.popularity_weight
+                rec['content_score'] = rec['score']
+                rec['popularity_score'] = rec['product'].get('rating', 0) / 5.0
+                rec['cf_score'] = 0  # Will be added when CF is fixed
+            
+            return content_recs
+            
+        except Exception as e:
+            print(f"500 ERROR - Failed to generate hybrid recommendations: {e}")
+            return self.get_popular_products(top_n)
+
     def get_popular_products(self, top_n=10):
-        """
-        Get popular products based on ratings and wishlist count
-        Fallback when no personalization data available
-        """
+        """Get popular products based on ratings and wishlist count"""
         try:
             products = list(db.products.find({
                 'is_active': True
@@ -333,30 +293,25 @@ class RecommendationService:
             } for product in products]
             
         except Exception as e:
-            print(f"Error getting popular products: {e}")
+            print(f"500 ERROR - Failed to get popular products: {e}")
             return []
     
     def update_product_embedding(self, product_id):
-        """
-        Update embedding for a specific product
-        Call this when product details are updated
-        """
+        """Update embedding for a specific product"""
         try:
             product = db.products.find_one({'_id': ObjectId(product_id)})
             if product:
-                # Remove from cache to force regeneration
                 if str(product_id) in self.embeddings_cache:
                     del self.embeddings_cache[str(product_id)]
                 
-                # Generate new embedding
                 self.get_product_embedding(product)
                 self.save_embeddings_cache()
-                
                 return True
         except Exception as e:
-            print(f"Error updating product embedding: {e}")
+            print(f"500 ERROR - Failed to update product embedding: {e}")
         
         return False
+
 
 # Create singleton instance
 recommendation_service = RecommendationService()

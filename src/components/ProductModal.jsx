@@ -2,18 +2,27 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useRecommendations } from '../contexts/RecommendationContext';
 import { useCart } from '../contexts/CartContext';
+import { useProducts } from '../contexts/ProductContext';
 import { X, Heart, Star, ShoppingCart, MessageCircle, Plus, Minus, Trash2 } from 'lucide-react';
 
-const ProductModal = ({ product, onClose }) => {
+const getStockStatus = (stock) => {
+  if (stock <= 0) return { status: 'out', color: 'text-red-600', bg: 'bg-red-50', text: 'Out of Stock' };
+  if (stock <= 10) return { status: 'low', color: 'text-yellow-600', bg: 'bg-yellow-50', text: `${stock} left` };
+  return { status: 'good', color: 'text-green-600', bg: 'bg-green-50', text: 'In Stock' };
+};
+
+const ProductModal = ({ product: productProp, onClose }) => {
   const { user, isAuthenticated } = useAuth();
   const { addToWishlist, removeFromWishlist, isInWishlist, addReview, getUserReview, getAllReviews } = useRecommendations();
   const { addToCart, cartItems, updateQuantity, removeFromCart, isLoading: cartLoading } = useCart();
+  const { getProductById } = useProducts(); // Add this line
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [cartMessage, setCartMessage] = useState('');
 
+  const product = getProductById(productProp._id || productProp.id) || productProp;
   const productId = product._id || product.id;
   const inWishlist = isAuthenticated && isInWishlist(productId);
   const userReview = isAuthenticated ? getUserReview(productId) : null;
@@ -22,6 +31,11 @@ const ProductModal = ({ product, onClose }) => {
   const cartItem = cartItems.find(item => item.id === productId);
   const isInCart = !!cartItem;
   const cartQuantity = cartItem ? cartItem.quantity : 0;
+
+  // Get stock status for consistent display
+  const stockStatus = getStockStatus(product.stock || 0);
+  const outOfStock = stockStatus.status === 'out';
+  const buttonDisabled = isAdding || cartLoading || !isAuthenticated || outOfStock;
 
   const handleWishlistToggle = () => {
     if (!isAuthenticated) return;
@@ -46,7 +60,7 @@ const ProductModal = ({ product, onClose }) => {
       return;
     }
 
-    if ((product.stock || 0) <= 0) {
+    if (outOfStock) {
       setCartMessage('This item is out of stock');
       setTimeout(() => setCartMessage(''), 3000);
       return;
@@ -120,8 +134,6 @@ const ProductModal = ({ product, onClose }) => {
   };
 
   const canReview = isAuthenticated && user?.role === 'buyer' && !userReview;
-  const outOfStock = (product.stock || 0) <= 0;
-  const buttonDisabled = isAdding || cartLoading || !isAuthenticated || outOfStock;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -176,15 +188,9 @@ const ProductModal = ({ product, onClose }) => {
                   <div className="text-3xl font-bold text-blue-600">
                     ${(product.price || 0).toFixed(2)}
                   </div>
-                  <div className={`text-sm px-3 py-1 rounded-full font-medium ${
-                    outOfStock
-                      ? 'bg-red-100 text-red-800'
-                      : (product.stock <= 5 ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800')
-                  }`}>
-                    {outOfStock
-                      ? 'Out of stock'
-                      : `${product.stock} in stock`
-                    }
+                  {/* Professional stock badge */}
+                  <div className={`text-sm px-3 py-1 rounded-full font-medium ${stockStatus.bg} ${stockStatus.color}`}>
+                    {stockStatus.text}
                   </div>
                 </div>
                 <div className="text-gray-600">

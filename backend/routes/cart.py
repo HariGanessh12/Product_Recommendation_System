@@ -3,18 +3,8 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from bson import ObjectId
 from datetime import datetime
 from models import db
-from services.recommendation_service import recommendation_service  # NEW: Import recommendation service
 
 cart_bp = Blueprint('cart', __name__)
-
-# NEW: Helper function to refresh user recommendations
-def refresh_user_recommendations(user_id):
-    """Refresh recommendations when user behavior changes"""
-    try:
-        recommendation_service.clear_user_cache(user_id)
-        print(f"Refreshed recommendations for user {user_id}")
-    except Exception as e:
-        print(f"Failed to refresh recommendations for user {user_id}: {e}")
 
 @cart_bp.route('', methods=['GET'])
 @jwt_required()
@@ -22,16 +12,10 @@ def get_cart():
     """Get user's cart items"""
     try:
         user_id = get_jwt_identity()
-        
-        print(f"DEBUG: Getting cart for user_id: {user_id}")
-        print(f"DEBUG: User_id type: {type(user_id)}")
-        
         user_id_str = str(user_id)
         
         pipeline = [
-            {
-                '$match': {'user_id': user_id_str}
-            },
+            {'$match': {'user_id': user_id_str}},
             {
                 '$lookup': {
                     'from': 'products',
@@ -40,30 +24,18 @@ def get_cart():
                     'as': 'product'
                 }
             },
-            {
-                '$unwind': '$product'
-            },
+            {'$unwind': '$product'},
             {
                 '$project': {
-                    '_id': 1,
-                    'user_id': 1,
-                    'product_id': 1,
-                    'quantity': 1,
-                    'created_at': 1,
-                    'updated_at': 1,
-                    'product.name': 1,
-                    'product.price': 1,
-                    'product.image_url': 1,
-                    'product.category': 1,
-                    'product.seller_name': 1,
-                    'product.stock': 1
+                    '_id': 1, 'user_id': 1, 'product_id': 1, 'quantity': 1,
+                    'created_at': 1, 'updated_at': 1,
+                    'product.name': 1, 'product.price': 1, 'product.image_url': 1,
+                    'product.category': 1, 'product.seller_name': 1, 'product.stock': 1
                 }
             }
         ]
         
         cart_items = list(db.cart.aggregate(pipeline))
-        
-        print(f"DEBUG: Found {len(cart_items)} cart items for user {user_id_str}")
         
         formatted_items = []
         total_amount = 0
@@ -86,6 +58,8 @@ def get_cart():
                 'item_total': item_total
             })
         
+        print(f"200 OK - Cart retrieved successfully: {len(formatted_items)} items")
+        
         return jsonify({
             'success': True,
             'cartItems': formatted_items,
@@ -95,9 +69,7 @@ def get_cart():
         }), 200
         
     except Exception as e:
-        print(f"DEBUG: Error getting cart: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"500 ERROR - Failed to fetch cart: {str(e)}")
         return jsonify({'error': 'Failed to fetch cart'}), 500
 
 @cart_bp.route('/add', methods=['POST'])
@@ -108,20 +80,19 @@ def add_to_cart():
         user_id = get_jwt_identity()
         data = request.get_json()
         
-        print(f"DEBUG: Adding to cart for user_id: {user_id}")
-        print(f"DEBUG: User_id type: {type(user_id)}")
-        print(f"DEBUG: Cart data: {data}")
-        
         if not data:
+            print("400 BAD REQUEST - Add to cart attempted with no data")
             return jsonify({'error': 'No data provided'}), 400
             
         product_id = data.get('product_id')
         quantity = int(data.get('quantity', 1))
         
         if not product_id:
+            print("400 BAD REQUEST - Add to cart failed: Missing product ID")
             return jsonify({'error': 'Product ID is required'}), 400
         
         if quantity <= 0:
+            print("400 BAD REQUEST - Add to cart failed: Invalid quantity")
             return jsonify({'error': 'Quantity must be greater than 0'}), 400
         
         user_id_str = str(user_id)
@@ -129,13 +100,15 @@ def add_to_cart():
         try:
             product = db.products.find_one({'_id': ObjectId(product_id)})
             if not product:
+                print(f"404 NOT FOUND - Add to cart failed: Product not found")
                 return jsonify({'error': 'Product not found'}), 404
             
             if product.get('stock', 0) < quantity:
+                print(f"400 BAD REQUEST - Add to cart failed: Insufficient stock")
                 return jsonify({'error': 'Insufficient stock available'}), 400
                 
         except Exception as e:
-            print(f"DEBUG: Product verification error: {e}")
+            print(f"400 BAD REQUEST - Add to cart failed: Invalid product ID")
             return jsonify({'error': 'Invalid product ID'}), 400
         
         existing_item = db.cart.find_one({
@@ -143,13 +116,11 @@ def add_to_cart():
             'product_id': ObjectId(product_id)
         })
         
-        print(f"DEBUG: Checking existing item - user_id: {user_id_str}, product_id: {product_id}")
-        print(f"DEBUG: Found existing item: {existing_item is not None}")
-        
         if existing_item:
             new_quantity = existing_item['quantity'] + quantity
             
             if product.get('stock', 0) < new_quantity:
+                print(f"400 BAD REQUEST - Add to cart failed: Would exceed stock")
                 return jsonify({'error': 'Adding this quantity would exceed available stock'}), 400
             
             result = db.cart.update_one(
@@ -161,9 +132,9 @@ def add_to_cart():
                     }
                 }
             )
-            print(f"DEBUG: Updated existing cart item quantity to: {new_quantity}")
             
             if result.modified_count == 0:
+                print(f"500 ERROR - Add to cart failed: Database update failed")
                 return jsonify({'error': 'Failed to update cart item'}), 500
                 
         else:
@@ -175,11 +146,9 @@ def add_to_cart():
                 'updated_at': datetime.utcnow()
             }
             result = db.cart.insert_one(cart_item)
-            print(f"DEBUG: Added new cart item with ID: {result.inserted_id}")
-            print(f"DEBUG: Cart item data: {cart_item}")
         
-        # NEW: Refresh recommendations after cart add
-        refresh_user_recommendations(user_id_str)
+        
+        print(f"200 OK - Item added to cart successfully")
         
         return jsonify({
             'success': True,
@@ -187,9 +156,7 @@ def add_to_cart():
         }), 200
         
     except Exception as e:
-        print(f"DEBUG: Error adding to cart: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"500 ERROR - Add to cart failed: {str(e)}")
         return jsonify({'error': 'Failed to add to cart'}), 500
 
 @cart_bp.route('/update', methods=['PUT'])
@@ -200,16 +167,15 @@ def update_cart_item():
         user_id = get_jwt_identity()
         data = request.get_json()
         
-        print(f"DEBUG: Updating cart for user_id: {user_id}")
-        print(f"DEBUG: Update data: {data}")
-        
         if not data:
+            print("400 BAD REQUEST - Cart update attempted with no data")
             return jsonify({'error': 'No data provided'}), 400
         
         product_id = data.get('product_id')
         quantity = int(data.get('quantity', 1))
         
         if not product_id:
+            print("400 BAD REQUEST - Cart update failed: Missing product ID")
             return jsonify({'error': 'Product ID is required'}), 400
         
         user_id_str = str(user_id)
@@ -221,25 +187,27 @@ def update_cart_item():
             })
             
             if result.deleted_count > 0:
-                # NEW: Refresh recommendations after cart removal
-                refresh_user_recommendations(user_id_str)
-                
+                print(f"200 OK - Item removed from cart successfully")
                 return jsonify({
                     'success': True,
                     'message': 'Item removed from cart'
                 }), 200
             else:
+                print(f"404 NOT FOUND - Cart update failed: Item not found")
                 return jsonify({'error': 'Item not found in cart'}), 404
         else:
             try:
                 product = db.products.find_one({'_id': ObjectId(product_id)})
                 if not product:
+                    print(f"404 NOT FOUND - Cart update failed: Product not found")
                     return jsonify({'error': 'Product not found'}), 404
                 
                 if product.get('stock', 0) < quantity:
+                    print(f"400 BAD REQUEST - Cart update failed: Insufficient stock")
                     return jsonify({'error': 'Insufficient stock available'}), 400
                     
             except Exception as e:
+                print(f"400 BAD REQUEST - Cart update failed: Invalid product ID")
                 return jsonify({'error': 'Invalid product ID'}), 400
             
             result = db.cart.update_one(
@@ -256,22 +224,20 @@ def update_cart_item():
             )
             
             if result.modified_count > 0:
-                # NEW: Refresh recommendations after cart update
-                refresh_user_recommendations(user_id_str)
-                
+                print(f"200 OK - Cart updated successfully")
                 return jsonify({
                     'success': True,
                     'message': 'Cart updated successfully'
                 }), 200
             else:
+                print(f"404 NOT FOUND - Cart update failed: Item not found")
                 return jsonify({'error': 'Item not found in cart'}), 404
         
     except ValueError:
+        print("400 BAD REQUEST - Cart update failed: Invalid quantity value")
         return jsonify({'error': 'Invalid quantity value'}), 400
     except Exception as e:
-        print(f"DEBUG: Error updating cart: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"500 ERROR - Cart update failed: {str(e)}")
         return jsonify({'error': 'Failed to update cart'}), 500
 
 @cart_bp.route('/remove', methods=['DELETE'])
@@ -282,15 +248,14 @@ def remove_from_cart():
         user_id = get_jwt_identity()
         data = request.get_json()
         
-        print(f"DEBUG: Removing from cart for user_id: {user_id}")
-        print(f"DEBUG: Remove data: {data}")
-        
         if not data:
+            print("400 BAD REQUEST - Cart removal attempted with no data")
             return jsonify({'error': 'No data provided'}), 400
         
         product_id = data.get('product_id')
         
         if not product_id:
+            print("400 BAD REQUEST - Cart removal failed: Missing product ID")
             return jsonify({'error': 'Product ID is required'}), 400
         
         user_id_str = str(user_id)
@@ -300,23 +265,18 @@ def remove_from_cart():
             'product_id': ObjectId(product_id)
         })
         
-        print(f"DEBUG: Removal result - deleted_count: {result.deleted_count}")
-        
         if result.deleted_count > 0:
-            # NEW: Refresh recommendations after cart removal
-            refresh_user_recommendations(user_id_str)
-            
+            print(f"200 OK - Item removed from cart successfully")
             return jsonify({
                 'success': True,
                 'message': 'Item removed from cart successfully'
             }), 200
         else:
+            print(f"404 NOT FOUND - Cart removal failed: Item not found")
             return jsonify({'error': 'Item not found in cart'}), 404
         
     except Exception as e:
-        print(f"DEBUG: Error removing from cart: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"500 ERROR - Cart removal failed: {str(e)}")
         return jsonify({'error': 'Failed to remove from cart'}), 500
 
 @cart_bp.route('/clear', methods=['DELETE'])
@@ -325,20 +285,13 @@ def clear_cart():
     """Clear all items from cart"""
     try:
         user_id = get_jwt_identity()
-        
-        print(f"DEBUG: Clearing cart for user_id: {user_id}")
-        
         user_id_str = str(user_id)
         
         result = db.cart.delete_many({
             'user_id': user_id_str
         })
-        
-        print(f"DEBUG: Clear result - deleted_count: {result.deleted_count}")
-        
-        # NEW: Refresh recommendations after cart clear
-        if result.deleted_count > 0:
-            refresh_user_recommendations(user_id_str)
+                
+        print(f"200 OK - Cart cleared successfully: {result.deleted_count} items removed")
         
         return jsonify({
             'success': True,
@@ -346,9 +299,7 @@ def clear_cart():
         }), 200
         
     except Exception as e:
-        print(f"DEBUG: Error clearing cart: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"500 ERROR - Cart clear failed: {str(e)}")
         return jsonify({'error': 'Failed to clear cart'}), 500
 
 @cart_bp.route('/count', methods=['GET'])
@@ -373,5 +324,5 @@ def get_cart_count():
         }), 200
         
     except Exception as e:
-        print(f"DEBUG: Error getting cart count: {str(e)}")
+        print(f"500 ERROR - Cart count failed: {str(e)}")
         return jsonify({'error': 'Failed to get cart count'}), 500

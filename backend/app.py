@@ -14,6 +14,7 @@ from routes.products import products_bp
 from routes.cart import cart_bp
 from routes.recommendations import recommendations_bp
 from routes.analytics import analytics_bp
+from routes.wishlist import wishlist_bp
 
 def create_app():
     app = Flask(__name__)
@@ -57,6 +58,7 @@ def create_app():
     app.register_blueprint(cart_bp, url_prefix='/api/cart')
     app.register_blueprint(recommendations_bp, url_prefix='/api/recommendations')
     app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
+    app.register_blueprint(wishlist_bp, url_prefix='/api/wishlist')
 
     @app.route('/')
     def home():

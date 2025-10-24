@@ -274,7 +274,7 @@ def get_hybrid_personalized_recommendations():
         limit = int(request.args.get('limit', 10))
         
         # Get hybrid recommendations
-        recommendations_data = recommendation_service.get_hybrid_personalized_recommendations(
+        recommendations_data = recommendation_service.get_personalized_recommendations(
             user_id,
             top_n=limit
         )
@@ -292,9 +292,9 @@ def get_hybrid_personalized_recommendations():
                 'image_url': product['image_url'],
                 'rating': product.get('rating', 0),
                 'seller_name': product['seller_name'],
-                'hybrid_score': item['hybrid_score'],
+                'hybrid_score': item.get('hybrid_score', item.get('score', 0)),  # ← FIXED LINE
                 'cf_score': item.get('cf_score', 0),
-                'content_score': item.get('content_score', 0),
+                'content_score': item.get('content_score', item.get('score', 0)),
                 'popularity_score': item.get('popularity_score', 0),
                 'explanation': item['explanation']
             })

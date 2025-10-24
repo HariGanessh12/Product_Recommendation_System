@@ -1,34 +1,23 @@
-from models.user import User
-from models.product import Product
-from models import db
+from pymongo import MongoClient
+from dotenv import load_dotenv
+import os
 
-# Add this at the end of your existing seed_data.py file
+load_dotenv()  # Loads variables from .env file
 
-# Update existing users to add status field
-def add_status_to_existing_users():
-    print("\n" + "="*50)
-    print("ADDING STATUS FIELD TO EXISTING USERS")
-    print("="*50)
-    
-    # Add status field to all users who don't have it
-    result = db.users.update_many(
-        {"status": {"$exists": False}},  # Users without status field
-        {"$set": {"status": "active"}}   # Set status to active
-    )
-    
-    print(f"✅ Updated {result.modified_count} users with status field")
-    
-    # Verify the update
-    users_with_status = db.users.count_documents({"status": {"$exists": True}})
-    total_users = db.users.count_documents({})
-    
-    print(f"✅ Users with status field: {users_with_status}/{total_users}")
-    print("="*50)
+mongo_uri = os.getenv('MONGODB_URI')
+if not mongo_uri:
+    raise Exception("MONGODB_URI not found in environment variables")
 
-# Call the function
-if __name__ == "__main__":
-    # Your existing seed_data.py code here...
-    # (keep all your existing code)
-    
-    # Add this new function call
-    add_status_to_existing_users()
+client = MongoClient(mongo_uri)
+db = client['product_recommendation_system']
+
+exclude_names = ["IPhone 16 Pro Max", "Apple 2024 MacBook Pro"]
+
+db.products.update_many(
+    {"name": {"$nin": exclude_names}},
+    {"$set": {"stock": 20}}
+)
+db.products.update_one({"name": "IPhone 16 Pro Max"}, {"$set": {"stock": 0}})
+db.products.update_one({"name": "Apple 2024 MacBook Pro"}, {"$set": {"stock": 1}})
+
+print("Stock values updated successfully")
