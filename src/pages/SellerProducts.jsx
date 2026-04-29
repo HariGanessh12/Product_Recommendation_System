@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useProducts } from '../contexts/ProductContext';
-import { Plus, CreditCard as Edit3, Trash2, Package, TrendingUp, Star, Eye, AlertTriangle, Check } from 'lucide-react';
+import { Plus, CreditCard as Edit3, Trash2, Package, Star, AlertTriangle, Check } from 'lucide-react';
 import ProductForm from '../components/ProductForm';
 
 const SellerProducts = () => {
@@ -13,7 +13,7 @@ const SellerProducts = () => {
   const [editingStock, setEditingStock] = useState(null);
   const [stockValue, setStockValue] = useState('');
 
-  // Fixed: Use both seller_id and seller field, and handle MongoDB _id
+  // Filter seller's products
   const myProducts = products.filter(p => 
     (p.seller_id === user?.id || p.seller === user?.id)
   );
@@ -26,7 +26,7 @@ const SellerProducts = () => {
     ? myProducts.reduce((sum, product) => sum + (product.rating || 0), 0) / myProducts.length
     : 0;
 
-  // NEW: Stock statistics
+  // Stock statistics
   const outOfStockCount = myProducts.filter(p => (p.stock || 0) <= 0).length;
   const lowStockCount = myProducts.filter(p => (p.stock || 0) > 0 && (p.stock || 0) <= 10).length;
 
@@ -44,7 +44,7 @@ const SellerProducts = () => {
     }
   };
 
-  // NEW: Stock management functions
+  // Stock management functions
   const handleStockEdit = (product) => {
     setEditingStock(product._id || product.id);
     setStockValue((product.stock || 0).toString());
@@ -57,7 +57,6 @@ const SellerProducts = () => {
         alert('Please enter a valid stock number (0 or greater)');
         return;
       }
-
       const result = await updateProduct(productId, { stock: newStock });
       if (result.success) {
         setEditingStock(null);
@@ -106,58 +105,36 @@ const SellerProducts = () => {
         </button>
       </div>
 
-      {/* Enhanced Stats with Stock Alerts */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
-        <div className="bg-blue-50 p-6 rounded-lg">
-          <div className="flex items-center space-x-3">
-            <Package className="h-8 w-8 text-blue-600" />
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Products</h3>
-              <p className="text-2xl font-bold text-blue-600">{myProducts.length}</p>
+      {/* Full-width Stats Rectangle */}
+      <div className="w-full mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+          <div className="bg-blue-50 p-6 rounded-lg flex flex-col items-center w-full h-full">
+            <div className="flex items-center space-x-3">
+              <Package className="h-8 w-8 text-blue-600" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Products</h3>
+                <p className="text-2xl font-bold text-blue-600">{myProducts.length}</p>
+              </div>
             </div>
           </div>
-        </div>
-        
-        <div className="bg-green-50 p-6 rounded-lg">
-          <div className="flex items-center space-x-3">
-            <TrendingUp className="h-8 w-8 text-green-600" />
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Revenue</h3>
-              <p className="text-2xl font-bold text-green-600">${totalRevenue.toFixed(2)}</p>
+          <div className="bg-yellow-50 p-6 rounded-lg flex flex-col items-center w-full h-full">
+            <div className="flex items-center space-x-3">
+              <Star className="h-8 w-8 text-yellow-600" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Avg Rating</h3>
+                <p className="text-2xl font-bold text-yellow-600">{averageRating.toFixed(1)}</p>
+              </div>
             </div>
           </div>
-        </div>
-        
-        <div className="bg-yellow-50 p-6 rounded-lg">
-          <div className="flex items-center space-x-3">
-            <Star className="h-8 w-8 text-yellow-600" />
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Avg Rating</h3>
-              <p className="text-2xl font-bold text-yellow-600">{averageRating.toFixed(1)}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-purple-50 p-6 rounded-lg">
-          <div className="flex items-center space-x-3">
-            <Eye className="h-8 w-8 text-purple-600" />
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Total Views</h3>
-              <p className="text-2xl font-bold text-purple-600">
-                {myProducts.reduce((sum, product) => sum + ((product.wishlist_count || 0) * 10), 0)}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* NEW: Stock Alert Card */}
-        <div className="bg-red-50 p-6 rounded-lg">
-          <div className="flex items-center space-x-3">
-            <AlertTriangle className="h-8 w-8 text-red-600" />
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Stock Alerts</h3>
-              <p className="text-sm text-red-600">{outOfStockCount} out of stock</p>
-              <p className="text-sm text-yellow-600">{lowStockCount} low stock</p>
+          {/* Stock Alert Card */}
+          <div className="bg-red-50 p-6 rounded-lg flex flex-col items-center w-full h-full">
+            <div className="flex items-center space-x-3">
+              <AlertTriangle className="h-8 w-8 text-red-600" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Stock Alerts</h3>
+                <p className="text-sm text-red-600">{outOfStockCount} out of stock</p>
+                <p className="text-sm text-yellow-600">{lowStockCount} low stock</p>
+              </div>
             </div>
           </div>
         </div>
@@ -241,7 +218,7 @@ const SellerProducts = () => {
                           ${(product.price || 0).toFixed(2)}
                         </div>
                       </td>
-                      {/* NEW: Stock Management Cell */}
+                      {/* Stock Management Cell */}
                       <td className="px-6 py-4 whitespace-nowrap">
                         {isEditingThisStock ? (
                           <div className="flex items-center space-x-2">

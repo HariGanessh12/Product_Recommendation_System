@@ -10,7 +10,7 @@ const Wishlist = () => {
   const { products } = useProducts();
   const { wishlist } = useRecommendations();
 
-  // Fixed: Updated to work with simplified wishlist structure (array of product IDs)
+  // Updated to work with simplified wishlist structure (array of product IDs)
   const wishlistProducts = wishlist
     .map(productId => {
       return products.find(p => (p._id || p.id) === productId);
@@ -32,7 +32,7 @@ const Wishlist = () => {
             Start adding products to your wishlist by clicking the heart icon on any product.
           </p>
           <button
-            onClick={() => window.location.href = '/products'} // Fixed: Better navigation
+            onClick={() => window.location.href = '/products'}
             className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center space-x-2 mx-auto"
           >
             <ShoppingBag className="h-5 w-5" />
@@ -46,35 +46,28 @@ const Wishlist = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-4">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">My Wishlist</h1>
         <p className="text-gray-600">
           You have {wishlist.length} item{wishlist.length !== 1 ? 's' : ''} in your wishlist
         </p>
       </div>
 
-      {/* Wishlist Items */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {wishlistProducts.map(product => (
-          <ProductCard key={product._id || product.id} product={product} />
-        ))}
-      </div>
-
-      {/* Wishlist Stats */}
-      <div className="mt-12 bg-white rounded-lg shadow-sm border p-6">
+      {/* Wishlist Stats moved to the top */}
+      <div className="mb-8 p-6">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Wishlist Statistics</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="text-center p-4 bg-blue-50 rounded-lg">
+          <div className="bg-blue-50 p-6 rounded-lg flex flex-col items-center justify-center text-center">
             <p className="text-2xl font-bold text-blue-600">{wishlist.length}</p>
             <p className="text-sm text-gray-600">Total Items</p>
           </div>
-          <div className="text-center p-4 bg-green-50 rounded-lg">
+          <div className="bg-green-50 p-6 rounded-lg flex flex-col items-center justify-center text-center">
             <p className="text-2xl font-bold text-green-600">
               ${wishlistProducts.reduce((sum, product) => sum + (product?.price || 0), 0).toFixed(2)}
             </p>
             <p className="text-sm text-gray-600">Total Value</p>
           </div>
-          <div className="text-center p-4 bg-orange-50 rounded-lg">
+          <div className="bg-orange-50 p-6 rounded-lg flex flex-col items-center justify-center text-center">
             <p className="text-2xl font-bold text-orange-600">
               ${wishlistProducts.length > 0 
                 ? (wishlistProducts.reduce((sum, product) => sum + (product?.price || 0), 0) / wishlistProducts.length).toFixed(2) 
@@ -83,6 +76,14 @@ const Wishlist = () => {
             <p className="text-sm text-gray-600">Average Price</p>
           </div>
         </div>
+      </div>
+
+
+      {/* Wishlist Items */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {wishlistProducts.map(product => (
+          <ProductCard key={product._id || product.id} product={product} />
+        ))}
       </div>
     </div>
   );

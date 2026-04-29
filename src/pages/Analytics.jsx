@@ -1,149 +1,54 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useProducts } from '../contexts/ProductContext';
-import { TrendingUp, Users, Star, Package, Heart, ShoppingCart, DollarSign } from 'lucide-react';
+import { TrendingUp, Users, Star, Package, Heart } from 'lucide-react';
 
 const Analytics = () => {
   const { user } = useAuth();
   const { products } = useProducts();
-  const [timeRange, setTimeRange] = useState('30'); // days
+  const [timeRange, setTimeRange] = useState('30');
   const [realUsers, setRealUsers] = useState([]);
 
   const isAdmin = user?.role === 'admin';
   const isSeller = user?.role === 'seller';
 
-  // Load real users data
   useEffect(() => {
     const loadRealUsers = () => {
       const allUsers = JSON.parse(localStorage.getItem('all_users') || '[]');
       const authUsers = JSON.parse(localStorage.getItem('auth_users') || '[]');
-      
-      // Combine and deduplicate users
       const combinedUsers = [...allUsers, ...authUsers];
-      const uniqueUsers = combinedUsers.filter((user, index, self) => 
+      const uniqueUsers = combinedUsers.filter((user, index, self) =>
         index === self.findIndex(u => u.email === user.email || u.id === user.id)
       );
-      
       setRealUsers(uniqueUsers);
     };
-
     loadRealUsers();
   }, []);
 
-  // Calculate real revenue based on actual data
-  const calculateRealRevenue = () => {
-    // Calculate revenue based on wishlist activity and estimated conversion
-    const conversionRate = 0.05; // 5% of wishlist items convert to sales
-    const platformFee = 0.10; // 10% platform fee
-    
-    return products.reduce((sum, product) => {
-      const estimatedSales = (product.wishlist_count || 0) * conversionRate;
-      const productRevenue = estimatedSales * (product.price || 0) * platformFee;
-      return sum + productRevenue;
-    }, 0);
-  };
-
-  // Get real activity from localStorage
-  const getRealRecentActivity = () => {
-    const activities = [];
-    
-    // Get recent reviews
-    const allReviews = JSON.parse(localStorage.getItem('all_reviews') || '[]');
-    const recentReviews = allReviews.slice(-2);
-    recentReviews.forEach(review => {
-      const product = products.find(p => (p._id || p.id) === review.productId);
-      if (product) {
-        activities.push({
-          id: `review_${review.id}`,
-          type: 'review',
-          message: `New review on ${product.name}`,
-          time: getTimeAgo(review.timestamp)
-        });
-      }
-    });
-
-    // Add wishlist activity
-    const wishlistCount = realUsers.reduce((sum, user) => {
-      const userWishlist = JSON.parse(localStorage.getItem(`wishlist_${user.id}`) || '[]');
-      return sum + userWishlist.length;
-    }, 0);
-    
-    if (wishlistCount > 0) {
-      activities.push({
-        id: 'wishlist_activity',
-        type: 'wishlist',
-        message: `${wishlistCount} products in wishlists`,
-        time: '1 hour ago'
-      });
-    }
-
-    // Add product activity
-    activities.push({
-      id: 'product_count',
-      type: 'product',
-      message: `${products.length} products available`,
-      time: '2 hours ago'
-    });
-
-    // Add user activity
-    activities.push({
-      id: 'user_count',
-      type: 'user',
-      message: `${realUsers.length} registered users`,
-      time: '3 hours ago'
-    });
-
-    return activities.slice(0, 4);
-  };
-
-  // Helper function to calculate time ago
-  const getTimeAgo = (timestamp) => {
-    const now = new Date();
-    const past = new Date(timestamp);
-    const diffInHours = Math.floor((now - past) / (1000 * 60 * 60));
-    
-    if (diffInHours < 1) return 'Just now';
-    if (diffInHours < 24) return `${diffInHours} hours ago`;
-    return `${Math.floor(diffInHours / 24)} days ago`;
-  };
-
-  // Calculate analytics data with REAL data
+  // Analytics calculation functions...
   const getAnalyticsData = () => {
     if (isAdmin) {
       const totalRating = products.reduce((sum, p) => sum + (p.rating || 0), 0);
-      const realRevenue = calculateRealRevenue();
-      
       return {
         totalProducts: products.length,
-        totalUsers: realUsers.length, // ✅ REAL user count
+        totalUsers: realUsers.length,
         totalReviews: products.reduce((sum, p) => sum + (p.reviews_count || 0), 0),
         totalWishlistItems: products.reduce((sum, p) => sum + (p.wishlist_count || 0), 0),
-        totalRevenue: realRevenue, // ✅ REAL calculated revenue
         averageRating: products.length > 0 ? totalRating / products.length : 0,
         topProducts: products
           .sort((a, b) => (b.wishlist_count || 0) - (a.wishlist_count || 0))
           .slice(0, 5),
         categoryStats: getCategoryStats(),
-        recentActivity: getRealRecentActivity() // ✅ REAL activity data
+        recentActivity: getRealRecentActivity()
       };
     } else if (isSeller) {
-      // Fixed: MongoDB compatibility for seller filtering
-      const sellerProducts = products.filter(p => 
+      const sellerProducts = products.filter(p =>
         (p.seller_id === user.id || p.seller === user.id)
       );
       const totalRating = sellerProducts.reduce((sum, p) => sum + (p.rating || 0), 0);
-      
       return {
         totalProducts: sellerProducts.length,
-        totalRevenue: sellerProducts.reduce((sum, p) => 
-          sum + ((p.price || 0) * (p.wishlist_count || 0) * 0.1), 0
-        ),
-        totalViews: sellerProducts.reduce((sum, p) => 
-          sum + ((p.wishlist_count || 0) * 10), 0
-        ),
-        totalWishlistItems: sellerProducts.reduce((sum, p) => 
-          sum + (p.wishlist_count || 0), 0
-        ),
+        totalWishlistItems: sellerProducts.reduce((sum, p) => sum + (p.wishlist_count || 0), 0),
         averageRating: sellerProducts.length > 0 ? totalRating / sellerProducts.length : 0,
         topProducts: sellerProducts
           .sort((a, b) => (b.wishlist_count || 0) - (a.wishlist_count || 0))
@@ -153,6 +58,7 @@ const Analytics = () => {
     }
   };
 
+  // Category and Recent Activity helpers...
   const getCategoryStats = () => {
     const categories = {};
     products.forEach(product => {
@@ -170,7 +76,6 @@ const Analytics = () => {
       categories[category].totalReviews += (product.reviews_count || 0);
       categories[category].avgRating += (product.rating || 0);
     });
-
     return Object.entries(categories).map(([category, stats]) => ({
       category,
       ...stats,
@@ -185,25 +90,74 @@ const Analytics = () => {
       if (!categories[category]) {
         categories[category] = {
           count: 0,
-          revenue: 0,
           wishlist: 0
         };
       }
       categories[category].count++;
-      categories[category].revenue += (product.price || 0) * (product.wishlist_count || 0) * 0.1;
       categories[category].wishlist += (product.wishlist_count || 0);
     });
-
     return Object.entries(categories).map(([category, stats]) => ({
       category,
       ...stats
     }));
   };
 
-  const data = getAnalyticsData();
+  const getRealRecentActivity = () => {
+    const activities = [];
+    const allReviews = JSON.parse(localStorage.getItem('all_reviews') || '[]');
+    const recentReviews = allReviews.slice(-2);
+    recentReviews.forEach(review => {
+      const product = products.find(p => (p._id || p.id) === review.productId);
+      if (product) {
+        activities.push({
+          id: `review_${review.id}`,
+          type: 'review',
+          message: `New review on ${product.name}`,
+          time: getTimeAgo(review.timestamp)
+        });
+      }
+    });
 
+    const wishlistCount = realUsers.reduce((sum, user) => {
+      const userWishlist = JSON.parse(localStorage.getItem(`wishlist_${user.id}`) || '[]');
+      return sum + userWishlist.length;
+    }, 0);
+    if (wishlistCount > 0) {
+      activities.push({
+        id: 'wishlist_activity',
+        type: 'wishlist',
+        message: `${wishlistCount} products in wishlists`,
+        time: '1 hour ago'
+      });
+    }
+    activities.push({
+      id: 'product_count',
+      type: 'product',
+      message: `${products.length} products available`,
+      time: '2 hours ago'
+    });
+    activities.push({
+      id: 'user_count',
+      type: 'user',
+      message: `${realUsers.length} registered users`,
+      time: '3 hours ago'
+    });
+    return activities.slice(0, 4);
+  };
+
+  const getTimeAgo = (timestamp) => {
+    const now = new Date();
+    const past = new Date(timestamp);
+    const diffInHours = Math.floor((now - past) / (1000 * 60 * 60));
+    if (diffInHours < 1) return 'Just now';
+    if (diffInHours < 24) return `${diffInHours} hours ago`;
+    return `${Math.floor(diffInHours / 24)} days ago`;
+  };
+
+  const data = getAnalyticsData();
   if (!data) return null;
 
+  // --- Render
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
@@ -228,7 +182,7 @@ const Analytics = () => {
       </div>
 
       {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className={`grid grid-cols-1 ${isSeller ? 'md:grid-cols-2' : 'md:grid-cols-3'} lg:grid-cols-3 gap-6 mb-8`}>
         <div className="bg-blue-50 p-6 rounded-lg">
           <div className="flex items-center space-x-3">
             <Package className="h-8 w-8 text-blue-600" />
@@ -238,7 +192,6 @@ const Analytics = () => {
             </div>
           </div>
         </div>
-
         {isAdmin && (
           <div className="bg-green-50 p-6 rounded-lg">
             <div className="flex items-center space-x-3">
@@ -251,20 +204,6 @@ const Analytics = () => {
             </div>
           </div>
         )}
-
-        <div className="bg-orange-50 p-6 rounded-lg">
-          <div className="flex items-center space-x-3">
-            <DollarSign className="h-8 w-8 text-orange-600" />
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Revenue</h3>
-              <p className="text-2xl font-bold text-orange-600">
-                ${(data.totalRevenue || 0).toFixed(2)}
-              </p>
-              <p className="text-sm text-gray-600">Estimated</p>
-            </div>
-          </div>
-        </div>
-
         <div className="bg-purple-50 p-6 rounded-lg">
           <div className="flex items-center space-x-3">
             <Star className="h-8 w-8 text-purple-600" />
@@ -276,53 +215,25 @@ const Analytics = () => {
             </div>
           </div>
         </div>
-
-        {isSeller && (
-          <>
-            <div className="bg-green-50 p-6 rounded-lg">
-              <div className="flex items-center space-x-3">
-                <TrendingUp className="h-8 w-8 text-green-600" />
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Views</h3>
-                  <p className="text-2xl font-bold text-green-600">{data.totalViews || 0}</p>
-                </div>
-              </div>
+        <div className="bg-red-50 p-6 rounded-lg">
+          <div className="flex items-center space-x-3">
+            <Heart className="h-8 w-8 text-red-600" />
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Wishlisted</h3>
+              <p className="text-2xl font-bold text-red-600">{data.totalWishlistItems || 0}</p>
             </div>
-
-            <div className="bg-red-50 p-6 rounded-lg">
-              <div className="flex items-center space-x-3">
-                <Heart className="h-8 w-8 text-red-600" />
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Wishlisted</h3>
-                  <p className="text-2xl font-bold text-red-600">{data.totalWishlistItems || 0}</p>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
+          </div>
+        </div>
         {isAdmin && (
-          <>
-            <div className="bg-red-50 p-6 rounded-lg">
-              <div className="flex items-center space-x-3">
-                <Heart className="h-8 w-8 text-red-600" />
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Wishlists</h3>
-                  <p className="text-2xl font-bold text-red-600">{data.totalWishlistItems || 0}</p>
-                </div>
+          <div className="bg-yellow-50 p-6 rounded-lg">
+            <div className="flex items-center space-x-3">
+              <Star className="h-8 w-8 text-yellow-600" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Reviews</h3>
+                <p className="text-2xl font-bold text-yellow-600">{data.totalReviews || 0}</p>
               </div>
             </div>
-
-            <div className="bg-yellow-50 p-6 rounded-lg">
-              <div className="flex items-center space-x-3">
-                <Star className="h-8 w-8 text-yellow-600" />
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Reviews</h3>
-                  <p className="text-2xl font-bold text-yellow-600">{data.totalReviews || 0}</p>
-                </div>
-              </div>
-            </div>
-          </>
+          </div>
         )}
       </div>
 
@@ -383,19 +294,15 @@ const Analytics = () => {
                     <p className="font-medium">{isAdmin ? category.totalWishlist : category.wishlist}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">
-                      {isAdmin ? 'Reviews' : 'Revenue'}
-                    </p>
+                    <p className="text-gray-500">{isAdmin ? 'Reviews' : 'Products'}</p>
                     <p className="font-medium">
-                      {isAdmin ? category.totalReviews : `$${(category.revenue || 0).toFixed(2)}`}
+                      {isAdmin ? category.totalReviews : category.count}
                     </p>
                   </div>
                   <div>
-                    <p className="text-gray-500">
-                      {isAdmin ? 'Avg Rating' : 'Products'}
-                    </p>
+                    <p className="text-gray-500">{isAdmin ? 'Avg Rating' : ''}</p>
                     <p className="font-medium">
-                      {isAdmin ? (category.avgRating || 0).toFixed(1) : category.count}
+                      {isAdmin ? (category.avgRating || 0).toFixed(1) : ''}
                     </p>
                   </div>
                 </div>
@@ -412,12 +319,14 @@ const Analytics = () => {
           <div className="space-y-4">
             {data.recentActivity.map((activity) => (
               <div key={activity.id} className="flex items-start space-x-3">
-                <div className={`p-2 rounded-full ${
-                  activity.type === 'review' ? 'bg-yellow-100 text-yellow-600' :
-                  activity.type === 'wishlist' ? 'bg-red-100 text-red-600' :
-                  activity.type === 'product' ? 'bg-blue-100 text-blue-600' :
-                  'bg-green-100 text-green-600'
-                }`}>
+                <div className={
+                  `p-2 rounded-full ${
+                    activity.type === 'review' ? 'bg-yellow-100 text-yellow-600'
+                    : activity.type === 'wishlist' ? 'bg-red-100 text-red-600'
+                    : activity.type === 'product' ? 'bg-blue-100 text-blue-600'
+                    : 'bg-green-100 text-green-600'
+                  }`
+                }>
                   {activity.type === 'review' && <Star className="h-4 w-4" />}
                   {activity.type === 'wishlist' && <Heart className="h-4 w-4" />}
                   {activity.type === 'product' && <Package className="h-4 w-4" />}
