@@ -1,4 +1,4 @@
-# ProductHub - AI-Powered Product Recommendation System
+# AI-Powered Product Recommendation System
 
 ProductHub is a full-stack e-commerce recommendation platform that helps buyers discover relevant products, enables sellers to manage listings and analytics, and gives admins visibility into platform activity. It combines semantic recommendations, collaborative filtering, and behavior tracking to deliver a more personalized shopping experience.
 
@@ -179,16 +179,6 @@ python init_recommendations.py
    - Popularity and trending signals as fallback or hybrid inputs
 5. Sellers manage product listings and monitor engagement.
 6. Admins review system-level analytics and recommendation performance.
-
-## Screenshots
-
-Add project screenshots here once available.
-
-```md
-![Dashboard Screenshot](./screenshots/dashboard.png)
-![Products Screenshot](./screenshots/products.png)
-![Analytics Screenshot](./screenshots/analytics.png)
-```
 
 ## Future Improvements
 
