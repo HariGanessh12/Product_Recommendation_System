@@ -168,6 +168,47 @@ python seed_data.py
 python init_recommendations.py
 ```
 
+## Deployment
+
+Deploy the frontend and backend as separate services. The frontend build must know
+the public URL of the backend API.
+
+### Backend
+
+Configure the deployment service with the values in
+`backend/.env.example` as secret environment variables. In particular:
+
+- Set `FLASK_ENV=production` and `FLASK_DEBUG=False`.
+- Set `MONGODB_URI` and `MONGODB_DB_NAME` to the Atlas database that contains
+  the application's collections.
+- Use long, unique values for `JWT_SECRET_KEY` and `SECRET_KEY`.
+- Set `CORS_ORIGINS` to the exact deployed frontend URL, for example
+  `https://producthub.example.com`.
+
+The repository includes a `Procfile` for platforms that support it. Its command
+starts the Flask application with Gunicorn:
+
+```bash
+gunicorn --chdir backend --bind 0.0.0.0:$PORT "app:create_app()"
+```
+
+### Frontend
+
+Before running the production build, create a frontend environment file from
+`.env.production.example` and set the public backend API URL:
+
+```env
+VITE_API_BASE_URL=https://your-api-domain.example/api
+```
+
+Then build and deploy the generated `dist` directory:
+
+```bash
+npm run build
+```
+
+Do not commit either deployment environment file or any credentials.
+
 ## How It Works
 
 1. Users register or log in as `buyer`, `seller`, or `admin`.

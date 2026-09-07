@@ -12,7 +12,7 @@ const UserManagement = () => {
   const [error, setError] = useState(null);
 
   // API base URL - adjust this to match your backend
-  const API_BASE_URL = 'http://localhost:5000/api';
+  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000/api').replace(/\/$/, '');
 
   const fetchUsersFromMongoDB = async () => {
     setLoading(true);

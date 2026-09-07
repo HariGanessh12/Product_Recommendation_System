@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 const AuthContext = createContext();
 
 // API base URL - matches your Flask server
-const API_BASE_URL = 'http://127.0.0.1:5000/api';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000/api').replace(/\/$/, '');
 
 export const useAuth = () => {
   const context = useContext(AuthContext);

@@ -17,7 +17,7 @@ export const CartProvider = ({ children }) => {
   const { isAuthenticated, user, getAuthToken } = useAuth();
 
   // API Base URL
-  const API_BASE_URL = 'http://localhost:5000';
+  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000/api').replace(/\/$/, '');
 
   // Get the correct token key
   const getToken = () => {
@@ -48,7 +48,7 @@ export const CartProvider = ({ children }) => {
         return;
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/cart`, {
+      const response = await fetch(`${API_BASE_URL}/cart`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -93,7 +93,7 @@ export const CartProvider = ({ children }) => {
         return { success: false, message: 'Authentication token missing' };
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/cart/add`, {
+      const response = await fetch(`${API_BASE_URL}/cart/add`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -155,7 +155,7 @@ export const CartProvider = ({ children }) => {
         return { success: false, message: 'Authentication token missing' };
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/cart/remove`, {
+      const response = await fetch(`${API_BASE_URL}/cart/remove`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -202,7 +202,7 @@ export const CartProvider = ({ children }) => {
         return { success: false, message: 'Authentication token missing' };
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/cart/update`, {
+      const response = await fetch(`${API_BASE_URL}/cart/update`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -251,7 +251,7 @@ export const CartProvider = ({ children }) => {
         return { success: false, message: 'Authentication token missing' };
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/cart/clear`, {
+      const response = await fetch(`${API_BASE_URL}/cart/clear`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,

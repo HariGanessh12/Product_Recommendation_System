@@ -6,10 +6,11 @@ client = MongoClient(
     Config.MONGODB_URI,
     serverSelectionTimeoutMS=30000,
     connectTimeoutMS=30000,
-    socketTimeoutMS=30000,
-    tls=True
+    socketTimeoutMS=30000
 )
-db = client.get_database()
+
+# Use the same explicit database selection as the Flask application.
+db = client[Config.MONGODB_DB_NAME]
 
 # Create indexes for better performance
 try:

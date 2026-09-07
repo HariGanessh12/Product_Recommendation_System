@@ -17,6 +17,7 @@ from routes.analytics import analytics_bp
 from routes.wishlist import wishlist_bp
 
 def create_app():
+    Config.validate_production_config()
     app = Flask(__name__)
     app.config.from_object(Config)
     
@@ -29,9 +30,7 @@ def create_app():
         client.admin.command('ping')
         print("MongoDB Atlas connected successfully")
         
-        # Extract database name from URI or use default
-        db_name = Config.MONGODB_URI.split('/')[-1].split('?')[0] or 'producthub'
-        app.config['DB'] = client[db_name]
+        app.config['DB'] = client[Config.MONGODB_DB_NAME]
         app.config['MONGO_CLIENT'] = client
         
     except ServerSelectionTimeoutError as e:
