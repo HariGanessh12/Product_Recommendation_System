@@ -44,8 +44,7 @@ const AuthModal = ({ onClose }) => {
 
   const demoCredentials = [
     { id: 'buyer', email: 'buyer@example.com', password: 'password', role: 'Buyer' },
-    { id: 'seller', email: 'seller@example.com', password: 'password', role: 'Seller' },
-    { id: 'admin', email: 'admin@example.com', password: 'password', role: 'Admin' }
+    { id: 'seller', email: 'seller@example.com', password: 'password', role: 'Seller' }
   ];
 
   const fillDemo = (email, password) => {
